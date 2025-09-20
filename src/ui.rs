@@ -5,11 +5,9 @@ use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
 use ratatui::Frame;
 
 use crate::model::AppSnapshot;
-use crate::theme::{header_style, job_color, title_style, value_style, BG, PANEL, TEXT};
+use crate::theme::{header_style, job_color, title_style, value_style, TEXT};
 
 pub fn draw(f: &mut Frame, s: &AppSnapshot) {
-    f.render_widget(Block::default().style(Style::default().bg(BG)), f.size());
-
     // Split into header + table + footer/status
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -26,9 +24,7 @@ pub fn draw(f: &mut Frame, s: &AppSnapshot) {
 }
 
 fn draw_header(f: &mut Frame, area: Rect, s: &AppSnapshot) {
-    let block = Block::default()
-        .borders(Borders::NONE)
-        .style(Style::default().bg(PANEL));
+    let block = Block::default().borders(Borders::NONE);
     let mut line = Line::default();
     line.spans.push(Span::styled(" IINACT TUI ", title_style()));
 
@@ -95,11 +91,7 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         ],
     )
     .header(headers)
-    .block(
-        Block::default()
-            .borders(Borders::NONE)
-            .style(Style::default().bg(PANEL)),
-    )
+    .block(Block::default().borders(Borders::NONE))
     .column_spacing(1);
 
     f.render_widget(table, area);
@@ -122,10 +114,6 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         Span::styled("Last Update:", header_style()),
         Span::styled(format!(" {} ms", age), value_style()),
     ]);
-    let widget = Paragraph::new(line).block(
-        Block::default()
-            .borders(Borders::NONE)
-            .style(Style::default().bg(PANEL)),
-    );
+    let widget = Paragraph::new(line).block(Block::default().borders(Borders::NONE));
     f.render_widget(widget, area);
 }

@@ -1,8 +1,6 @@
 use ratatui::style::{Color, Style};
 
-// Dark purple / cyberpunk palette
-pub const BG: Color = Color::Rgb(18, 10, 26);
-pub const PANEL: Color = Color::Rgb(28, 16, 38);
+// Dark purple / cyberpunk palette (foreground-only to preserve terminal background)
 pub const ACCENT: Color = Color::Rgb(200, 60, 255); // neon purple
 pub const ACCENT_2: Color = Color::Rgb(0, 255, 200); // neon cyan-green
 pub const TEXT: Color = Color::Rgb(220, 210, 230);
