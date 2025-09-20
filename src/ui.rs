@@ -46,16 +46,10 @@ fn draw_header(f: &mut Frame, area: Rect, s: &AppSnapshot) {
     let block = Block::default().borders(Borders::NONE);
     let w = area.width as usize;
 
-    let line = if let Some(enc) = &s.encounter {
-        // Responsive header variants, right-aligned
-        if w >= 90 {
+    let line_top = if let Some(enc) = &s.encounter {
+        // Top header now excludes Encounter/Zone; show compact combat metrics only
+        if w >= 56 {
             Line::from(vec![
-                Span::styled("Encounter:", header_style()),
-                Span::styled(format!(" {} ", enc.title), value_style()),
-                Span::raw("| "),
-                Span::styled("Zone:", header_style()),
-                Span::styled(format!(" {} ", enc.zone), value_style()),
-                Span::raw("| "),
                 Span::styled("Dur:", header_style()),
                 Span::styled(format!(" {} ", enc.duration), value_style()),
                 Span::raw("| "),
@@ -65,19 +59,15 @@ fn draw_header(f: &mut Frame, area: Rect, s: &AppSnapshot) {
                 Span::styled("Damage:", header_style()),
                 Span::styled(format!(" {}", enc.damage), value_style()),
             ])
-        } else if w >= 70 {
+        } else if w >= 40 {
             Line::from(vec![
-                Span::styled(enc.title.as_str(), header_style()),
-                Span::raw("  |  "),
                 Span::styled("Dur:", header_style()),
                 Span::styled(format!(" {} ", enc.duration), value_style()),
                 Span::styled("ENCDPS:", header_style()),
                 Span::styled(format!(" {}", enc.encdps), value_style()),
             ])
-        } else if w >= 54 {
+        } else if w >= 28 {
             Line::from(vec![
-                Span::styled(enc.title.as_str(), header_style()),
-                Span::raw("  |  "),
                 Span::styled(enc.duration.as_str(), value_style()),
                 Span::raw("  "),
                 Span::styled(enc.encdps.as_str(), value_style()),
@@ -89,11 +79,48 @@ fn draw_header(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         Line::from(vec![Span::raw("Waiting for data...")])
     };
 
-    let widget = Paragraph::new(line)
+    // Second line: Encounter and Zone to occupy the empty header space
+    let line_bottom = if let Some(enc) = &s.encounter {
+        if w >= 40 {
+            Line::from(vec![
+                Span::styled("Encounter:", header_style()),
+                Span::styled(format!(" {}  ", enc.title), value_style()),
+                Span::styled("Zone:", header_style()),
+                Span::styled(format!(" {}", enc.zone), value_style()),
+            ])
+        } else if w >= 24 {
+            Line::from(vec![
+                Span::styled("Enc:", header_style()),
+                Span::styled(format!(" {}  ", enc.title), value_style()),
+            ])
+        } else {
+            Line::from(vec![])
+        }
+    } else {
+        Line::from(vec![])
+    };
+
+    let head = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+        ])
+        .split(area);
+
+    // Swap: show Encounter/Zone on top, and Dur/ENCDPS/Damage below
+    let widget_top = Paragraph::new(line_bottom)
+        .block(block.clone())
+        .style(Style::default().fg(TEXT))
+        .alignment(Alignment::Left);
+    f.render_widget(widget_top, head[0]);
+
+    let widget_bottom = Paragraph::new(line_top)
         .block(block)
         .style(Style::default().fg(TEXT))
         .alignment(Alignment::Left);
-    f.render_widget(widget, area);
+    f.render_widget(widget_bottom, head[1]);
 }
 
 fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
