@@ -81,17 +81,26 @@ fn draw_header(f: &mut Frame, area: Rect, s: &AppSnapshot) {
 
     // Second line: Encounter and Zone to occupy the empty header space
     let line_bottom = if let Some(enc) = &s.encounter {
+        // Choose a live-friendly title: during active fights, ACT may not finalize the boss name.
+        // Fall back to Zone (with an 'active' hint) to keep this line reactive.
+        let display_title = if enc.title.is_empty()
+            || (enc.is_active && enc.title.eq_ignore_ascii_case("Encounter"))
+        {
+            enc.zone.clone()
+        } else {
+            enc.title.clone()
+        };
         if w >= 40 {
             Line::from(vec![
                 Span::styled("Encounter:", header_style()),
-                Span::styled(format!(" {}  ", enc.title), value_style()),
+                Span::styled(format!(" {}  ", display_title), value_style()),
                 Span::styled("Zone:", header_style()),
                 Span::styled(format!(" {}", enc.zone), value_style()),
             ])
         } else if w >= 24 {
             Line::from(vec![
                 Span::styled("Enc:", header_style()),
-                Span::styled(format!(" {}  ", enc.title), value_style()),
+                Span::styled(format!(" {}  ", display_title), value_style()),
             ])
         } else {
             Line::from(vec![])

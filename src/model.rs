@@ -59,6 +59,7 @@ pub struct EncounterSummary {
     pub duration: String,
     pub encdps: String,
     pub damage: String,
+    pub is_active: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

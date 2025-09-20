@@ -73,12 +73,19 @@ pub fn parse_combat_data(value: &Value) -> Option<(EncounterSummary, Vec<Combata
         .map(val_to_string)
         .unwrap_or_default();
 
+    let is_active = obj
+        .get("isActive")
+        .and_then(|v| v.as_str())
+        .map(|s| s.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+
     let encounter = EncounterSummary {
         title: enc_title,
         zone: enc_zone,
         duration: enc_duration,
         encdps: enc_encdps,
         damage: enc_damage,
+        is_active,
     };
 
     // Combatants → rows
