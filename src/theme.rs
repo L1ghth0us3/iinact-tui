@@ -49,3 +49,18 @@ pub fn title_style() -> Style {
 pub fn value_style() -> Style {
     Style::default().fg(ACCENT_2)
 }
+
+// Role-based color for DPS bars (xterm 256-indexed colors)
+// Tanks → blue(75), Healers → green(41), DPS → red(124)
+pub fn role_bar_color(job: &str) -> Color {
+    match job {
+        // Tanks
+        "PLD" | "WAR" | "DRK" | "GNB" => Color::Indexed(75),
+        // Healers
+        "WHM" | "SCH" | "AST" | "SGE" => Color::Indexed(41),
+        // Everything else treated as DPS
+        _ => Color::Indexed(124),
+    }
+}
+
+// Gradient helpers removed; we use solid role colors for bars.

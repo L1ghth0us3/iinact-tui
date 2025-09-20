@@ -62,7 +62,10 @@ async fn main() -> Result<()> {
             if let Event::Key(key) = event::read()? {
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => running = false,
-                    // Future: in-TUI controls (e.g., toggle bars, adjust top-N)
+                    KeyCode::Char('d') => {
+                        let mut s = state.write().await;
+                        s.decoration = s.decoration.next();
+                    }
                     _ => {}
                 }
             }

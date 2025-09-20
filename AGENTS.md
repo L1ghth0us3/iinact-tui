@@ -72,3 +72,18 @@ python3 query_iinact.py --show-logline
 - Normalize numeric strings to floats (strip commas and percent signs).
 - Present a live table sorted by ENCDPS; refresh on each incoming `CombatData`.
 - Optional: filter out `isActive == "false"` to avoid stale snapshots.
+
+### Current TUI Behavior (v0.2.0)
+- Rendering
+  - Table columns: Name, Job, ENCDPS, Crit%, DH%, Deaths (numeric columns are right‑aligned).
+  - Responsive breakpoints hide columns at narrow widths (down to Name‑only).
+  - Header: line 1 shows Encounter/Zone; line 2 shows Dur | ENCDPS | Damage; a dim gray separator appears under the table header.
+  - Party‑only rows using a known job set; case‑insensitive key lookup.
+- Decorations (pluggable)
+  - `Decor: underline` (default): two‑line rows with a thin role‑colored bar directly under each entry.
+  - `Decor: background`: one‑line rows with a role‑colored background meter behind each entry.
+  - `Decor: none`: no additional row decoration; compact one‑line rows.
+  - Cycle key: `d`.
+- Styling
+  - Foreground‑only for normal widgets to preserve terminal blur/transparency. Background is used only for the meter fill.
+  - Role colors (xterm‑256): tank=75, healer=41, dps=124; job name text uses per‑job colors.
