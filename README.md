@@ -11,9 +11,10 @@ A fast, dependency‑light terminal DPS meter for FFXIV that connects to an IINA
 - Live table sorted by ENCDPS; party‑only rows (known job codes).
 - Right‑aligned numeric headers and values (ENCDPS, Crit%, DH%, Deaths).
 - Responsive columns at small widths (minimal and name‑only modes).
-- Two meter styles (toggle):
-  - `meter:off` — thin role‑colored bar directly under each entry (two‑line rows).
-  - `meter:on` — role‑colored background meter behind each entry (one‑line rows).
+- Decorations (cycle with `d`):
+  - `Decor: underline` — thin role‑colored bar directly under each entry (two‑line rows).
+  - `Decor: background` — role‑colored background meter behind each entry (one‑line rows).
+  - `Decor: none` — no extra decoration (compact one‑line rows).
 - Encounter/Zone header on top, Dur | ENCDPS | Damage below it; dim gray header separator.
 
 ## Prerequisites
@@ -31,7 +32,7 @@ The app will connect automatically to `ws://127.0.0.1:10501/ws` and begin render
 
 ## Controls
 - `q` or `Esc` — quit
-- `u` — toggle meters (underline bars vs. background meters)
+- `d` — cycle decorations (underline → background → none)
 
 ## Notes & Behavior
 - Party‑only: rows are filtered to common job codes (PLD/WAR/DRK/GNB, WHM/SCH/AST/SGE, MNK/DRG/NIN/SAM/RPR/VPR, BRD/MCH/DNC, BLM/SMN/RDM/PCT, BLU).
@@ -52,4 +53,3 @@ The app will connect automatically to `ws://127.0.0.1:10501/ws` and begin render
 
 ## License
 This project does not currently declare a license. Ask before redistributing.
-

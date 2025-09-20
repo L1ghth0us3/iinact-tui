@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
 use ratatui::Frame;
 
-use crate::model::AppSnapshot;
+use crate::model::{AppSnapshot, Decoration};
 use crate::theme::{header_style, job_color, role_bar_color, title_style, value_style, TEXT};
 
 pub fn draw(f: &mut Frame, s: &AppSnapshot) {
@@ -133,8 +133,7 @@ fn draw_header(f: &mut Frame, area: Rect, s: &AppSnapshot) {
 
 fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
     let w = area.width as usize;
-    let _inline = s.inline_underline; // repurposed: 'inline' = background meter on
-    let inline = s.inline_underline;
+    let row_h = s.decoration.row_height();
 
     // Breakpoints: progressively hide columns on narrow terminals
     enum Variant {
@@ -157,7 +156,7 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
     };
 
     // Draw background meters first (behind text) when enabled
-    if inline {
+    if matches!(s.decoration, Decoration::Background) {
         draw_bg_meters(f, area, s);
     }
 
@@ -187,7 +186,7 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
                     Cell::from(dh),
                     Cell::from(deaths),
                 ])
-                .height(if inline { 1 } else { 2 })
+                .height(row_h)
             });
             let table = Table::new(
                 rows,
@@ -227,7 +226,7 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
                     Cell::from(crit),
                     Cell::from(dh),
                 ])
-                .height(if inline { 1 } else { 2 })
+                .height(row_h)
             });
             let table = Table::new(
                 rows,
@@ -263,7 +262,7 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
                     Cell::from(enc),
                     Cell::from(crit),
                 ])
-                .height(if inline { 1 } else { 2 })
+                .height(row_h)
             });
             let table = Table::new(
                 rows,
@@ -295,7 +294,7 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
                     Cell::from(enc),
                     Cell::from(job),
                 ])
-                .height(if inline { 1 } else { 2 })
+                .height(row_h)
             });
             let table = Table::new(
                 rows,
@@ -318,7 +317,7 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
             let rows = s.rows.iter().map(|r| {
                 let text = format!("{}  [{}]", r.name, r.encdps_str);
                 Row::new([Cell::from(text).style(Style::default().fg(job_color(&r.job)))])
-                    .height(if inline { 1 } else { 2 })
+                    .height(row_h)
             });
             let table = Table::new(rows, [Constraint::Percentage(100)])
                 .header(headers)
@@ -348,8 +347,8 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         }
     }
 
-    // In bar mode (meter off), draw thin underline bars under each row
-    if !inline {
+    // In underline mode, draw thin underline bars under each row
+    if matches!(s.decoration, Decoration::Underline) {
         draw_underlines(f, area, s);
     }
 }
@@ -368,15 +367,8 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
             Span::styled(" q ", title_style()),
             Span::styled("quit", header_style()),
             Span::raw("  |  "),
-            Span::styled(" u ", title_style()),
-            Span::styled(
-                if s.inline_underline {
-                    "meter:on"
-                } else {
-                    "meter:off"
-                },
-                header_style(),
-            ),
+            Span::styled(" d ", title_style()),
+            Span::styled(s.decoration.wide_label(), header_style()),
             Span::raw("  |  "),
             Span::styled("Status:", header_style()),
             Span::styled(format!(" {}", status), value_style()),
@@ -386,22 +378,19 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
             Span::styled(" q ", title_style()),
             Span::styled("quit", header_style()),
             Span::raw("  |  "),
-            Span::styled(" u ", title_style()),
-            Span::styled(
-                if s.inline_underline { "u:on" } else { "u:off" },
-                header_style(),
-            ),
+            Span::styled(" d ", title_style()),
+            Span::styled(s.decoration.short_label(), header_style()),
             Span::raw("  |  "),
             Span::styled(status, value_style()),
         ])
     } else if w >= 36 {
         Line::from(vec![
             Span::styled(" q ", title_style()),
-            Span::styled(" u ", title_style()),
+            Span::styled(" d ", title_style()),
             Span::styled(status, value_style()),
         ])
     } else {
-        Line::from(vec![Span::styled("qu", title_style())])
+        Line::from(vec![Span::styled("qd", title_style())])
     };
 
     let widget = Paragraph::new(line)

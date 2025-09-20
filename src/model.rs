@@ -12,7 +12,7 @@ pub struct AppSnapshot {
     pub last_update_ms: u128,
     pub encounter: Option<EncounterSummary>,
     pub rows: Vec<CombatantRow>,
-    pub inline_underline: bool,
+    pub decoration: Decoration,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -21,7 +21,7 @@ pub struct AppState {
     pub last_update: Option<Instant>,
     pub encounter: Option<EncounterSummary>,
     pub rows: Vec<CombatantRow>,
-    pub inline_underline: bool,
+    pub decoration: Decoration,
 }
 
 impl AppState {
@@ -47,7 +47,7 @@ impl AppState {
                 .unwrap_or(0),
             encounter: self.encounter.clone(),
             rows: self.rows.clone(),
-            inline_underline: self.inline_underline,
+            decoration: self.decoration,
         }
     }
 }
@@ -103,3 +103,48 @@ pub fn known_jobs() -> &'static HashSet<&'static str> {
 }
 
 // (reserved for future outbound WS messages via in-TUI controls)
+
+// Visual decoration modes for rows; designed to be easily extensible.
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum Decoration {
+    // No additional decoration; compact one-line rows
+    None,
+    // Thin role-colored underline on the line below each row (two-line rows)
+    #[default]
+    Underline,
+    // Role-colored background meter behind each row (one-line rows)
+    Background,
+}
+
+impl Decoration {
+    pub fn next(self) -> Self {
+        match self {
+            Decoration::Underline => Decoration::Background,
+            Decoration::Background => Decoration::None,
+            Decoration::None => Decoration::Underline,
+        }
+    }
+
+    pub fn row_height(self) -> u16 {
+        match self {
+            Decoration::Underline => 2,
+            Decoration::Background | Decoration::None => 1,
+        }
+    }
+
+    pub fn short_label(self) -> &'static str {
+        match self {
+            Decoration::Underline => "decor:line",
+            Decoration::Background => "decor:bg",
+            Decoration::None => "decor:none",
+        }
+    }
+
+    pub fn wide_label(self) -> &'static str {
+        match self {
+            Decoration::Underline => "Decor: underline",
+            Decoration::Background => "Decor: background",
+            Decoration::None => "Decor: none",
+        }
+    }
+}
