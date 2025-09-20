@@ -12,6 +12,7 @@ pub struct AppSnapshot {
     pub last_update_ms: u128,
     pub encounter: Option<EncounterSummary>,
     pub rows: Vec<CombatantRow>,
+    pub gradient_on: bool,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -20,6 +21,7 @@ pub struct AppState {
     pub last_update: Option<Instant>,
     pub encounter: Option<EncounterSummary>,
     pub rows: Vec<CombatantRow>,
+    pub gradient_on: bool,
 }
 
 impl AppState {
@@ -45,6 +47,7 @@ impl AppState {
                 .unwrap_or(0),
             encounter: self.encounter.clone(),
             rows: self.rows.clone(),
+            gradient_on: self.gradient_on,
         }
     }
 }

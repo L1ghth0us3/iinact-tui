@@ -1,11 +1,14 @@
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::Style;
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
 use ratatui::Frame;
 
 use crate::model::AppSnapshot;
-use crate::theme::{header_style, job_color, role_bar_color, title_style, value_style, TEXT};
+use crate::theme::{
+    header_style, job_color, lerp_rgb, role_bar_color, role_bar_rgb, text_rgb, title_style,
+    value_style, TEXT,
+};
 
 pub fn draw(f: &mut Frame, s: &AppSnapshot) {
     // Split into header + table + footer/status
@@ -23,89 +26,261 @@ pub fn draw(f: &mut Frame, s: &AppSnapshot) {
     draw_status(f, chunks[2], s);
 }
 
+fn right_align(text: &str, width: usize) -> String {
+    let len = text.len();
+    if len >= width {
+        // Keep rightmost content
+        text.chars()
+            .rev()
+            .take(width)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect()
+    } else {
+        format!("{:>width$}", text, width = width)
+    }
+}
+
 fn draw_header(f: &mut Frame, area: Rect, s: &AppSnapshot) {
     let block = Block::default().borders(Borders::NONE);
-    let mut line = Line::default();
-    line.spans.push(Span::styled(" IINACT TUI ", title_style()));
+    let w = area.width as usize;
 
-    if let Some(enc) = &s.encounter {
-        line.spans.push(Span::raw(" | "));
-        line.spans
-            .push(Span::styled(enc.title.as_str(), header_style()));
-        line.spans.push(Span::raw("  in  "));
-        line.spans
-            .push(Span::styled(enc.zone.as_str(), header_style()));
-        line.spans.push(Span::raw("  "));
-        line.spans.push(Span::styled("Dur:", header_style()));
-        line.spans
-            .push(Span::styled(format!(" {}", enc.duration), value_style()));
-        line.spans.push(Span::raw("  "));
-        line.spans.push(Span::styled("ENCDPS:", header_style()));
-        line.spans
-            .push(Span::styled(format!(" {}", enc.encdps), value_style()));
-        line.spans.push(Span::raw("  "));
-        line.spans.push(Span::styled("Damage:", header_style()));
-        line.spans
-            .push(Span::styled(format!(" {}", enc.damage), value_style()));
+    let line = if let Some(enc) = &s.encounter {
+        // Responsive header variants, right-aligned
+        if w >= 90 {
+            Line::from(vec![
+                Span::styled("Encounter:", header_style()),
+                Span::styled(format!(" {} ", enc.title), value_style()),
+                Span::raw("| "),
+                Span::styled("Zone:", header_style()),
+                Span::styled(format!(" {} ", enc.zone), value_style()),
+                Span::raw("| "),
+                Span::styled("Dur:", header_style()),
+                Span::styled(format!(" {} ", enc.duration), value_style()),
+                Span::raw("| "),
+                Span::styled("ENCDPS:", header_style()),
+                Span::styled(format!(" {} ", enc.encdps), value_style()),
+                Span::raw("| "),
+                Span::styled("Damage:", header_style()),
+                Span::styled(format!(" {}", enc.damage), value_style()),
+            ])
+        } else if w >= 70 {
+            Line::from(vec![
+                Span::styled(enc.title.as_str(), header_style()),
+                Span::raw("  |  "),
+                Span::styled("Dur:", header_style()),
+                Span::styled(format!(" {} ", enc.duration), value_style()),
+                Span::styled("ENCDPS:", header_style()),
+                Span::styled(format!(" {}", enc.encdps), value_style()),
+            ])
+        } else if w >= 54 {
+            Line::from(vec![
+                Span::styled(enc.title.as_str(), header_style()),
+                Span::raw("  |  "),
+                Span::styled(enc.duration.as_str(), value_style()),
+                Span::raw("  "),
+                Span::styled(enc.encdps.as_str(), value_style()),
+            ])
+        } else {
+            Line::from(vec![Span::styled(enc.encdps.as_str(), value_style())])
+        }
     } else {
-        line.spans.push(Span::raw(" | Waiting for data..."));
-    }
+        Line::from(vec![Span::raw("Waiting for data...")])
+    };
 
     let widget = Paragraph::new(line)
         .block(block)
-        .style(Style::default().fg(TEXT));
+        .style(Style::default().fg(TEXT))
+        .alignment(Alignment::Left);
     f.render_widget(widget, area);
 }
 
 fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
-    // Determine max ENCDPS for relative bars
-    let max_dps = s
-        .rows
-        .iter()
-        .map(|r| r.encdps)
-        .fold(0.0_f64, |a, b| if b > a { b } else { a });
+    let w = area.width as usize;
 
-    let headers = Row::new([
-        Cell::from("Name"),
-        Cell::from("DPS Bar"),
-        Cell::from("Job"),
-        Cell::from("ENCDPS"),
-        Cell::from("Crit%"),
-        Cell::from("DH%"),
-        Cell::from("Deaths"),
-    ])
-    .style(header_style());
+    // Breakpoints: progressively hide columns on narrow terminals
+    enum Variant {
+        Full,
+        NoDeaths,
+        NoDHDeaths,
+        Minimal,
+        NameOnly,
+    }
+    let variant = if w >= 90 {
+        Variant::Full
+    } else if w >= 72 {
+        Variant::NoDeaths
+    } else if w >= 58 {
+        Variant::NoDHDeaths
+    } else if w >= 44 {
+        Variant::Minimal
+    } else {
+        Variant::NameOnly
+    };
 
-    let rows = s.rows.iter().map(|r| {
-        let bar = make_bar(r.encdps, max_dps, 22);
-        Row::new([
-            Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
-            Cell::from(bar).style(Style::default().fg(role_bar_color(&r.job))),
-            Cell::from(r.job.clone()),
-            Cell::from(r.encdps_str.clone()),
-            Cell::from(r.crit.clone()),
-            Cell::from(r.dh.clone()),
-            Cell::from(r.deaths.clone()),
-        ])
-    });
+    match variant {
+        Variant::Full => {
+            let headers = Row::new([
+                Cell::from("Name"),
+                Cell::from(right_align("Job", 5)),
+                Cell::from(right_align("ENCDPS", 10)),
+                Cell::from(right_align("Crit%", 8)),
+                Cell::from(right_align("DH%", 8)),
+                Cell::from(right_align("Deaths", 8)),
+            ])
+            .style(header_style());
+            let rows = s.rows.iter().map(|r| {
+                let job = right_align(&r.job, 5);
+                let enc = right_align(&r.encdps_str, 10);
+                let crit = right_align(&r.crit, 8);
+                let dh = right_align(&r.dh, 8);
+                let deaths = right_align(&r.deaths, 8);
+                Row::new([
+                    Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
+                    Cell::from(job),
+                    Cell::from(enc),
+                    Cell::from(crit),
+                    Cell::from(dh),
+                    Cell::from(deaths),
+                ])
+                .height(2)
+            });
+            let table = Table::new(
+                rows,
+                [
+                    Constraint::Percentage(34),
+                    Constraint::Length(5),
+                    Constraint::Length(10),
+                    Constraint::Length(8),
+                    Constraint::Length(8),
+                    Constraint::Length(8),
+                ],
+            )
+            .header(headers)
+            .block(Block::default().borders(Borders::NONE))
+            .column_spacing(1);
+            f.render_widget(table, area);
+        }
+        Variant::NoDeaths => {
+            let headers = Row::new([
+                Cell::from("Name"),
+                Cell::from(right_align("Job", 5)),
+                Cell::from(right_align("ENCDPS", 9)),
+                Cell::from(right_align("Crit%", 6)),
+                Cell::from(right_align("DH%", 6)),
+            ])
+            .style(header_style());
+            let rows = s.rows.iter().map(|r| {
+                let job = right_align(&r.job, 5);
+                let enc = right_align(&r.encdps_str, 9);
+                let crit = right_align(&r.crit, 6);
+                let dh = right_align(&r.dh, 6);
+                Row::new([
+                    Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
+                    Cell::from(job),
+                    Cell::from(enc),
+                    Cell::from(crit),
+                    Cell::from(dh),
+                ])
+                .height(2)
+            });
+            let table = Table::new(
+                rows,
+                [
+                    Constraint::Percentage(40),
+                    Constraint::Length(5),
+                    Constraint::Length(9),
+                    Constraint::Length(6),
+                    Constraint::Length(6),
+                ],
+            )
+            .header(headers)
+            .block(Block::default().borders(Borders::NONE))
+            .column_spacing(1);
+            f.render_widget(table, area);
+        }
+        Variant::NoDHDeaths => {
+            let headers = Row::new([
+                Cell::from("Name"),
+                Cell::from(right_align("Job", 5)),
+                Cell::from(right_align("ENCDPS", 9)),
+                Cell::from(right_align("Crit%", 6)),
+            ])
+            .style(header_style());
+            let rows = s.rows.iter().map(|r| {
+                let job = right_align(&r.job, 5);
+                let enc = right_align(&r.encdps_str, 9);
+                let crit = right_align(&r.crit, 6);
+                Row::new([
+                    Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
+                    Cell::from(job),
+                    Cell::from(enc),
+                    Cell::from(crit),
+                ])
+                .height(2)
+            });
+            let table = Table::new(
+                rows,
+                [
+                    Constraint::Percentage(50),
+                    Constraint::Length(5),
+                    Constraint::Length(9),
+                    Constraint::Length(6),
+                ],
+            )
+            .header(headers)
+            .block(Block::default().borders(Borders::NONE))
+            .column_spacing(1);
+            f.render_widget(table, area);
+        }
+        Variant::Minimal => {
+            let headers = Row::new([
+                Cell::from("Name"),
+                Cell::from(right_align("ENCDPS", 9)),
+                Cell::from(right_align("Job", 4)),
+            ])
+            .style(header_style());
+            let rows = s.rows.iter().map(|r| {
+                let enc = right_align(&r.encdps_str, 9);
+                let job = right_align(&r.job, 4);
+                Row::new([
+                    Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
+                    Cell::from(enc),
+                    Cell::from(job),
+                ])
+                .height(2)
+            });
+            let table = Table::new(
+                rows,
+                [
+                    Constraint::Percentage(60),
+                    Constraint::Length(9),
+                    Constraint::Length(4),
+                ],
+            )
+            .header(headers)
+            .block(Block::default().borders(Borders::NONE))
+            .column_spacing(1);
+            f.render_widget(table, area);
+        }
+        Variant::NameOnly => {
+            // Compose a single column: "Name  [ENCDPS]"
+            let headers = Row::new([Cell::from("Name (ENCDPS)")]).style(header_style());
+            let rows = s.rows.iter().map(|r| {
+                let text = format!("{}  [{}]", r.name, r.encdps_str);
+                Row::new([Cell::from(text).style(Style::default().fg(job_color(&r.job)))]).height(2)
+            });
+            let table = Table::new(rows, [Constraint::Percentage(100)])
+                .header(headers)
+                .block(Block::default().borders(Borders::NONE))
+                .column_spacing(0);
+            f.render_widget(table, area);
+        }
+    }
 
-    let table = Table::new(
-        rows,
-        [
-            Constraint::Percentage(30),
-            Constraint::Length(22),
-            Constraint::Length(5),
-            Constraint::Length(10),
-            Constraint::Length(8),
-            Constraint::Length(8),
-            Constraint::Length(8),
-        ],
-    )
-    .header(headers)
-    .block(Block::default().borders(Borders::NONE))
-    .column_spacing(1);
-
-    f.render_widget(table, area);
+    // After drawing the table, draw thin underline bars under each row across the full width
+    draw_underlines(f, area, s);
 }
 
 fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
@@ -114,33 +289,125 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
     } else {
         "Disconnected"
     };
-    let age = s.last_update_ms;
-    let line = Line::from(vec![
-        Span::styled(" q ", title_style()),
-        Span::styled("quit", header_style()),
-        Span::raw("  |  "),
-        Span::styled("Status:", header_style()),
-        Span::styled(format!(" {}", status), value_style()),
-        Span::raw("  "),
-        Span::styled("Last Update:", header_style()),
-        Span::styled(format!(" {} ms", age), value_style()),
-    ]);
-    let widget = Paragraph::new(line).block(Block::default().borders(Borders::NONE));
+    let w = area.width as usize;
+
+    // Responsive footer variants, left-aligned
+    let line = if w >= 90 {
+        Line::from(vec![
+            Span::styled(" q ", title_style()),
+            Span::styled("quit", header_style()),
+            Span::raw("  |  "),
+            Span::styled(" g ", title_style()),
+            Span::styled("gradient:", header_style()),
+            Span::styled(if s.gradient_on { " on" } else { " off" }, value_style()),
+            Span::raw("  |  "),
+            Span::styled("Status:", header_style()),
+            Span::styled(format!(" {}", status), value_style()),
+        ])
+    } else if w >= 60 {
+        Line::from(vec![
+            Span::styled(" q ", title_style()),
+            Span::styled("quit", header_style()),
+            Span::raw("  |  "),
+            Span::styled(" g ", title_style()),
+            Span::styled(
+                if s.gradient_on { "grad:on" } else { "grad:off" },
+                header_style(),
+            ),
+            Span::raw("  |  "),
+            Span::styled(status, value_style()),
+        ])
+    } else if w >= 36 {
+        Line::from(vec![
+            Span::styled(" q ", title_style()),
+            Span::styled(" g ", title_style()),
+            Span::raw("  |  "),
+            Span::styled(status, value_style()),
+        ])
+    } else {
+        Line::from(vec![Span::styled("q g", title_style())])
+    };
+
+    let widget = Paragraph::new(line)
+        .block(Block::default().borders(Borders::NONE))
+        .alignment(Alignment::Left);
     f.render_widget(widget, area);
 }
 
-fn make_bar(value: f64, max: f64, width: usize) -> String {
-    if max <= 0.0 || width == 0 {
-        return String::new();
+fn draw_underlines(f: &mut Frame, area: Rect, s: &AppSnapshot) {
+    if area.height <= 1 {
+        return;
     }
-    let ratio = (value / max).clamp(0.0, 1.0);
-    let filled = (ratio * width as f64).round() as usize;
-    let mut s = String::new();
-    for _ in 0..filled {
-        s.push('█');
+    let max_dps = s
+        .rows
+        .iter()
+        .map(|r| r.encdps)
+        .fold(0.0_f64, |a, b| if b > a { b } else { a });
+    if max_dps <= 0.0 {
+        return;
     }
-    for _ in filled..width {
-        s.push(' ');
+
+    // Header consumes 1 line; each row consumes 2 lines; underline on the second line
+    let usable_height = area.height.saturating_sub(1);
+    let visible_rows = (usable_height / 2) as usize;
+    let width = area.width as usize;
+
+    for (i, r) in s.rows.iter().take(visible_rows).enumerate() {
+        let ratio = (r.encdps / max_dps).clamp(0.0, 1.0);
+        let filled = (ratio * width as f64).round() as usize;
+        let y = area.y + 1 + (i as u16) * 2 + 1; // line directly under row
+        if y >= area.y + area.height {
+            break;
+        }
+        let bar_rect = Rect {
+            x: area.x,
+            y,
+            width: area.width,
+            height: 1,
+        };
+
+        let para = if s.gradient_on && filled > 0 {
+            // Smooth fade: interpolate from role RGB to text RGB, dim last steps
+            let steps = 12usize;
+            let seg_w = (filled / steps.max(1)).max(1);
+            let mut spans: Vec<Span> = Vec::with_capacity(steps + 1);
+            let mut placed = 0usize;
+            let base = role_bar_rgb(&r.job);
+            let tgt = text_rgb();
+            for i in 0..steps {
+                let mut n = seg_w;
+                if i == steps - 1 {
+                    n = filled.saturating_sub(placed);
+                }
+                if n == 0 {
+                    continue;
+                }
+                let t = (i as f32) / ((steps - 1) as f32);
+                let mut style = Style::default().fg(lerp_rgb(base, tgt, t));
+                if i >= steps.saturating_sub(4) {
+                    style = style.add_modifier(Modifier::DIM);
+                }
+                spans.push(Span::styled("▔".repeat(n), style));
+                placed += n;
+            }
+            if width > filled {
+                spans.push(Span::raw(" ".repeat(width - filled)));
+            }
+            Paragraph::new(Line::from(spans))
+        } else {
+            let mut line = String::with_capacity(width);
+            for _ in 0..filled {
+                line.push('▔');
+            }
+            for _ in filled..width {
+                line.push(' ');
+            }
+            Paragraph::new(Line::from(Span::styled(
+                line,
+                Style::default().fg(role_bar_color(&r.job)),
+            )))
+        };
+
+        f.render_widget(para, bar_rect);
     }
-    s
 }
