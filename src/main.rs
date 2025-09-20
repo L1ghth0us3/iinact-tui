@@ -62,11 +62,10 @@ async fn main() -> Result<()> {
             if let Event::Key(key) = event::read()? {
                 match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => running = false,
-                    KeyCode::Char('g') => {
+                    KeyCode::Char('u') => {
                         let mut s = state.write().await;
-                        s.gradient_on = !s.gradient_on;
+                        s.inline_underline = !s.inline_underline;
                     }
-                    // Future: in-TUI controls (e.g., toggle bars, adjust top-N)
                     _ => {}
                 }
             }

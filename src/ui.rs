@@ -1,14 +1,11 @@
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
 use ratatui::Frame;
 
 use crate::model::AppSnapshot;
-use crate::theme::{
-    header_style, job_color, lerp_rgb, role_bar_color, role_bar_rgb, text_rgb, title_style,
-    value_style, TEXT,
-};
+use crate::theme::{header_style, job_color, role_bar_color, title_style, value_style, TEXT};
 
 pub fn draw(f: &mut Frame, s: &AppSnapshot) {
     // Split into header + table + footer/status
@@ -41,6 +38,8 @@ fn right_align(text: &str, width: usize) -> String {
         format!("{:>width$}", text, width = width)
     }
 }
+
+// inline name underline removed; inline mode now uses background meters only
 
 fn draw_header(f: &mut Frame, area: Rect, s: &AppSnapshot) {
     let block = Block::default().borders(Borders::NONE);
@@ -134,6 +133,8 @@ fn draw_header(f: &mut Frame, area: Rect, s: &AppSnapshot) {
 
 fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
     let w = area.width as usize;
+    let _inline = s.inline_underline; // repurposed: 'inline' = background meter on
+    let inline = s.inline_underline;
 
     // Breakpoints: progressively hide columns on narrow terminals
     enum Variant {
@@ -154,6 +155,11 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
     } else {
         Variant::NameOnly
     };
+
+    // Draw background meters first (behind text) when enabled
+    if inline {
+        draw_bg_meters(f, area, s);
+    }
 
     match variant {
         Variant::Full => {
@@ -181,7 +187,7 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
                     Cell::from(dh),
                     Cell::from(deaths),
                 ])
-                .height(2)
+                .height(if inline { 1 } else { 2 })
             });
             let table = Table::new(
                 rows,
@@ -221,7 +227,7 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
                     Cell::from(crit),
                     Cell::from(dh),
                 ])
-                .height(2)
+                .height(if inline { 1 } else { 2 })
             });
             let table = Table::new(
                 rows,
@@ -257,7 +263,7 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
                     Cell::from(enc),
                     Cell::from(crit),
                 ])
-                .height(2)
+                .height(if inline { 1 } else { 2 })
             });
             let table = Table::new(
                 rows,
@@ -289,7 +295,7 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
                     Cell::from(enc),
                     Cell::from(job),
                 ])
-                .height(2)
+                .height(if inline { 1 } else { 2 })
             });
             let table = Table::new(
                 rows,
@@ -311,7 +317,8 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
                 .style(header_style());
             let rows = s.rows.iter().map(|r| {
                 let text = format!("{}  [{}]", r.name, r.encdps_str);
-                Row::new([Cell::from(text).style(Style::default().fg(job_color(&r.job)))]).height(2)
+                Row::new([Cell::from(text).style(Style::default().fg(job_color(&r.job)))])
+                    .height(if inline { 1 } else { 2 })
             });
             let table = Table::new(rows, [Constraint::Percentage(100)])
                 .header(headers)
@@ -341,8 +348,10 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         }
     }
 
-    // After drawing the table, draw thin underline bars under each row across the full width
-    draw_underlines(f, area, s);
+    // In bar mode (meter off), draw thin underline bars under each row
+    if !inline {
+        draw_underlines(f, area, s);
+    }
 }
 
 fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
@@ -359,9 +368,15 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
             Span::styled(" q ", title_style()),
             Span::styled("quit", header_style()),
             Span::raw("  |  "),
-            Span::styled(" g ", title_style()),
-            Span::styled("gradient:", header_style()),
-            Span::styled(if s.gradient_on { " on" } else { " off" }, value_style()),
+            Span::styled(" u ", title_style()),
+            Span::styled(
+                if s.inline_underline {
+                    "meter:on"
+                } else {
+                    "meter:off"
+                },
+                header_style(),
+            ),
             Span::raw("  |  "),
             Span::styled("Status:", header_style()),
             Span::styled(format!(" {}", status), value_style()),
@@ -371,9 +386,9 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
             Span::styled(" q ", title_style()),
             Span::styled("quit", header_style()),
             Span::raw("  |  "),
-            Span::styled(" g ", title_style()),
+            Span::styled(" u ", title_style()),
             Span::styled(
-                if s.gradient_on { "grad:on" } else { "grad:off" },
+                if s.inline_underline { "u:on" } else { "u:off" },
                 header_style(),
             ),
             Span::raw("  |  "),
@@ -382,12 +397,11 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
     } else if w >= 36 {
         Line::from(vec![
             Span::styled(" q ", title_style()),
-            Span::styled(" g ", title_style()),
-            Span::raw("  |  "),
+            Span::styled(" u ", title_style()),
             Span::styled(status, value_style()),
         ])
     } else {
-        Line::from(vec![Span::styled("q g", title_style())])
+        Line::from(vec![Span::styled("qu", title_style())])
     };
 
     let widget = Paragraph::new(line)
@@ -396,6 +410,51 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
     f.render_widget(widget, area);
 }
 
+fn draw_bg_meters(f: &mut Frame, area: Rect, s: &AppSnapshot) {
+    if area.height <= 2 {
+        return;
+    }
+    // Determine max ENCDPS to scale bars
+    let max_dps = s
+        .rows
+        .iter()
+        .map(|r| r.encdps)
+        .fold(0.0_f64, |a, b| a.max(b));
+    if max_dps <= 0.0 {
+        return;
+    }
+    let header_lines = 2u16; // table header consumes 2 lines
+    let width = area.width as usize;
+    let visible_rows = (area.height.saturating_sub(header_lines)) as usize;
+    for (i, r) in s.rows.iter().take(visible_rows).enumerate() {
+        let ratio = (r.encdps / max_dps).clamp(0.0, 1.0);
+        let filled = (ratio * width as f64).round() as usize;
+        let y = area.y + header_lines + i as u16; // row text line
+        if y >= area.y + area.height {
+            break;
+        }
+        let rect = Rect {
+            x: area.x,
+            y,
+            width: area.width,
+            height: 1,
+        };
+        let mut spans: Vec<Span> = Vec::with_capacity(2);
+        if filled > 0 {
+            spans.push(Span::styled(
+                " ".repeat(filled),
+                Style::default().bg(role_bar_color(&r.job)),
+            ));
+        }
+        if width > filled {
+            spans.push(Span::raw(" ".repeat(width - filled)));
+        }
+        let bg = Paragraph::new(Line::from(spans));
+        f.render_widget(bg, rect);
+    }
+}
+
+#[allow(dead_code)]
 fn draw_underlines(f: &mut Frame, area: Rect, s: &AppSnapshot) {
     if area.height <= 1 {
         return;
@@ -429,47 +488,18 @@ fn draw_underlines(f: &mut Frame, area: Rect, s: &AppSnapshot) {
             height: 1,
         };
 
-        let para = if s.gradient_on && filled > 0 {
-            // Smooth fade: interpolate from role RGB to text RGB, dim last steps
-            let steps = 12usize;
-            let seg_w = (filled / steps.max(1)).max(1);
-            let mut spans: Vec<Span> = Vec::with_capacity(steps + 1);
-            let mut placed = 0usize;
-            let base = role_bar_rgb(&r.job);
-            let tgt = text_rgb();
-            for i in 0..steps {
-                let mut n = seg_w;
-                if i == steps - 1 {
-                    n = filled.saturating_sub(placed);
-                }
-                if n == 0 {
-                    continue;
-                }
-                let t = (i as f32) / ((steps - 1) as f32);
-                let mut style = Style::default().fg(lerp_rgb(base, tgt, t));
-                if i >= steps.saturating_sub(4) {
-                    style = style.add_modifier(Modifier::DIM);
-                }
-                spans.push(Span::styled("▔".repeat(n), style));
-                placed += n;
-            }
-            if width > filled {
-                spans.push(Span::raw(" ".repeat(width - filled)));
-            }
-            Paragraph::new(Line::from(spans))
-        } else {
-            let mut line = String::with_capacity(width);
-            for _ in 0..filled {
-                line.push('▔');
-            }
-            for _ in filled..width {
-                line.push(' ');
-            }
-            Paragraph::new(Line::from(Span::styled(
-                line,
-                Style::default().fg(role_bar_color(&r.job)),
-            )))
-        };
+        // Solid role-colored bar, no gradient
+        let mut line = String::with_capacity(width);
+        for _ in 0..filled {
+            line.push('▔');
+        }
+        for _ in filled..width {
+            line.push(' ');
+        }
+        let para = Paragraph::new(Line::from(Span::styled(
+            line,
+            Style::default().fg(role_bar_color(&r.job)),
+        )));
 
         f.render_widget(para, bar_rect);
     }
