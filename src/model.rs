@@ -2,7 +2,6 @@ use std::collections::HashSet;
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc::UnboundedSender;
 
 pub const WS_URL_DEFAULT: &str = "ws://127.0.0.1:10501/ws";
 
@@ -74,7 +73,10 @@ pub struct CombatantRow {
 pub enum AppEvent {
     Connected,
     Disconnected,
-    CombatData { encounter: EncounterSummary, rows: Vec<CombatantRow> },
+    CombatData {
+        encounter: EncounterSummary,
+        rows: Vec<CombatantRow>,
+    },
 }
 
 // Known job codes for party filtering and color mapping
@@ -83,16 +85,11 @@ pub fn known_jobs() -> &'static HashSet<&'static str> {
     static JOBS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
         [
             // Tanks
-            "PLD", "WAR", "DRK", "GNB",
-            // Healers
-            "WHM", "SCH", "AST", "SGE",
-            // Melee
-            "MNK", "DRG", "NIN", "SAM", "RPR", "VPR",
-            // Ranged phys
-            "BRD", "MCH", "DNC",
-            // Casters
-            "BLM", "SMN", "RDM", "PCT",
-            // Limited
+            "PLD", "WAR", "DRK", "GNB", // Healers
+            "WHM", "SCH", "AST", "SGE", // Melee
+            "MNK", "DRG", "NIN", "SAM", "RPR", "VPR", // Ranged phys
+            "BRD", "MCH", "DNC", // Casters
+            "BLM", "SMN", "RDM", "PCT", // Limited
             "BLU",
         ]
         .into_iter()
@@ -101,11 +98,4 @@ pub fn known_jobs() -> &'static HashSet<&'static str> {
     &JOBS
 }
 
-// Helper to emit WS messages from anywhere if needed later
-#[allow(dead_code)]
-pub enum WsOut {
-    Text(String),
-}
-
-pub type WsOutTx = UnboundedSender<WsOut>;
-
+// (reserved for future outbound WS messages via in-TUI controls)

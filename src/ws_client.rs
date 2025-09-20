@@ -7,10 +7,10 @@ use tokio::time::sleep;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::model::{AppEvent, AppState};
+use crate::model::AppEvent;
 use crate::parse::parse_combat_data;
 
-pub async fn run(ws_url: String, tx: UnboundedSender<AppEvent>, _state: std::sync::Arc<tokio::sync::RwLock<AppState>>) {
+pub async fn run(ws_url: String, tx: UnboundedSender<AppEvent>) {
     // Simple reconnect loop
     loop {
         match connect_async(&ws_url).await {
@@ -24,7 +24,8 @@ pub async fn run(ws_url: String, tx: UnboundedSender<AppEvent>, _state: std::syn
                     .await;
                 let _ = write
                     .send(Message::Text(
-                        "{\"call\":\"subscribe\",\"events\":[\"CombatData\",\"LogLine\"]}".to_string(),
+                        "{\"call\":\"subscribe\",\"events\":[\"CombatData\",\"LogLine\"]}"
+                            .to_string(),
                     ))
                     .await;
 
@@ -34,13 +35,17 @@ pub async fn run(ws_url: String, tx: UnboundedSender<AppEvent>, _state: std::syn
                         Ok(Message::Text(txt)) => {
                             if let Ok(val) = serde_json::from_str::<Value>(&txt) {
                                 if let Some((enc, rows)) = parse_combat_data(&val) {
-                                    let _ = tx.send(AppEvent::CombatData { encounter: enc, rows });
+                                    let _ = tx.send(AppEvent::CombatData {
+                                        encounter: enc,
+                                        rows,
+                                    });
                                 }
                             }
                         }
                         Ok(Message::Binary(_)) => {}
                         Ok(Message::Ping(_)) => {}
                         Ok(Message::Pong(_)) => {}
+                        Ok(Message::Frame(_)) => {}
                         Ok(Message::Close(_)) => break,
                         Err(_e) => break,
                     }
@@ -56,4 +61,3 @@ pub async fn run(ws_url: String, tx: UnboundedSender<AppEvent>, _state: std::syn
         sleep(Duration::from_secs(2)).await;
     }
 }
-

@@ -4,7 +4,9 @@ use std::{io, sync::Arc};
 use anyhow::Result;
 use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode};
 use crossterm::execute;
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+};
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use tokio::sync::{mpsc, RwLock};
@@ -27,10 +29,7 @@ async fn main() -> Result<()> {
 
     // Spawn WS client task (auto-connect and subscribe)
     let ws_url = WS_URL_DEFAULT.to_string();
-    let state_ws = Arc::clone(&state);
-    tokio::spawn(async move {
-        ws_client::run(ws_url, tx, state_ws).await;
-    });
+    tokio::spawn(async move { ws_client::run(ws_url, tx).await });
 
     // TUI init
     enable_raw_mode()?;
@@ -80,4 +79,3 @@ async fn main() -> Result<()> {
     terminal.show_cursor()?;
     Ok(())
 }
-

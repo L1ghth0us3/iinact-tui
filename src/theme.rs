@@ -6,7 +6,6 @@ pub const PANEL: Color = Color::Rgb(28, 16, 38);
 pub const ACCENT: Color = Color::Rgb(200, 60, 255); // neon purple
 pub const ACCENT_2: Color = Color::Rgb(0, 255, 200); // neon cyan-green
 pub const TEXT: Color = Color::Rgb(220, 210, 230);
-pub const MUTED: Color = Color::Rgb(140, 120, 160);
 
 // Simple job color suggestions tuned toward purple/cyberpunk vibe
 pub fn job_color(job: &str) -> Color {
@@ -43,7 +42,12 @@ pub fn job_color(job: &str) -> Color {
     }
 }
 
-pub fn header_style() -> Style { Style::default().fg(TEXT) }
-pub fn title_style() -> Style { Style::default().fg(ACCENT) }
-pub fn value_style() -> Style { Style::default().fg(ACCENT_2) }
-
+pub fn header_style() -> Style {
+    Style::default().fg(TEXT)
+}
+pub fn title_style() -> Style {
+    Style::default().fg(ACCENT)
+}
+pub fn value_style() -> Style {
+    Style::default().fg(ACCENT_2)
+}
