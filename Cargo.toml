@@ -2,6 +2,10 @@
 name = "iinact-tui"
 version = "0.1.0"
 edition = "2021"
+description = "Terminal DPS meter for IINACT (OverlayPlugin-compatible), built with ratatui"
+readme = "README.md"
+keywords = ["ffxiv", "act", "iinact", "tui", "ratatui"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 anyhow = "1"
