@@ -5,7 +5,7 @@ use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
 use ratatui::Frame;
 
 use crate::model::AppSnapshot;
-use crate::theme::{header_style, job_color, title_style, value_style, TEXT};
+use crate::theme::{header_style, job_color, role_bar_color, title_style, value_style, TEXT};
 
 pub fn draw(f: &mut Frame, s: &AppSnapshot) {
     // Split into header + table + footer/status
@@ -58,8 +58,16 @@ fn draw_header(f: &mut Frame, area: Rect, s: &AppSnapshot) {
 }
 
 fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
+    // Determine max ENCDPS for relative bars
+    let max_dps = s
+        .rows
+        .iter()
+        .map(|r| r.encdps)
+        .fold(0.0_f64, |a, b| if b > a { b } else { a });
+
     let headers = Row::new([
         Cell::from("Name"),
+        Cell::from("DPS Bar"),
         Cell::from("Job"),
         Cell::from("ENCDPS"),
         Cell::from("Crit%"),
@@ -69,8 +77,10 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
     .style(header_style());
 
     let rows = s.rows.iter().map(|r| {
+        let bar = make_bar(r.encdps, max_dps, 22);
         Row::new([
             Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
+            Cell::from(bar).style(Style::default().fg(role_bar_color(&r.job))),
             Cell::from(r.job.clone()),
             Cell::from(r.encdps_str.clone()),
             Cell::from(r.crit.clone()),
@@ -82,7 +92,8 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
     let table = Table::new(
         rows,
         [
-            Constraint::Percentage(34),
+            Constraint::Percentage(30),
+            Constraint::Length(22),
             Constraint::Length(5),
             Constraint::Length(10),
             Constraint::Length(8),
@@ -116,4 +127,20 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
     ]);
     let widget = Paragraph::new(line).block(Block::default().borders(Borders::NONE));
     f.render_widget(widget, area);
+}
+
+fn make_bar(value: f64, max: f64, width: usize) -> String {
+    if max <= 0.0 || width == 0 {
+        return String::new();
+    }
+    let ratio = (value / max).clamp(0.0, 1.0);
+    let filled = (ratio * width as f64).round() as usize;
+    let mut s = String::new();
+    for _ in 0..filled {
+        s.push('█');
+    }
+    for _ in filled..width {
+        s.push(' ');
+    }
+    s
 }
