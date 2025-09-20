@@ -156,6 +156,7 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
                 Cell::from(right_align("DH%", 8)),
                 Cell::from(right_align("Deaths", 8)),
             ])
+            .height(2)
             .style(header_style());
             let rows = s.rows.iter().map(|r| {
                 let job = right_align(&r.job, 5);
@@ -197,6 +198,7 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
                 Cell::from(right_align("Crit%", 6)),
                 Cell::from(right_align("DH%", 6)),
             ])
+            .height(2)
             .style(header_style());
             let rows = s.rows.iter().map(|r| {
                 let job = right_align(&r.job, 5);
@@ -234,6 +236,7 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
                 Cell::from(right_align("ENCDPS", 9)),
                 Cell::from(right_align("Crit%", 6)),
             ])
+            .height(2)
             .style(header_style());
             let rows = s.rows.iter().map(|r| {
                 let job = right_align(&r.job, 5);
@@ -267,6 +270,7 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
                 Cell::from(right_align("ENCDPS", 9)),
                 Cell::from(right_align("Job", 4)),
             ])
+            .height(2)
             .style(header_style());
             let rows = s.rows.iter().map(|r| {
                 let enc = right_align(&r.encdps_str, 9);
@@ -293,7 +297,9 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         }
         Variant::NameOnly => {
             // Compose a single column: "Name  [ENCDPS]"
-            let headers = Row::new([Cell::from("Name (ENCDPS)")]).style(header_style());
+            let headers = Row::new([Cell::from("Name (ENCDPS)")])
+                .height(2)
+                .style(header_style());
             let rows = s.rows.iter().map(|r| {
                 let text = format!("{}  [{}]", r.name, r.encdps_str);
                 Row::new([Cell::from(text).style(Style::default().fg(job_color(&r.job)))]).height(2)
@@ -303,6 +309,26 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
                 .block(Block::default().borders(Borders::NONE))
                 .column_spacing(0);
             f.render_widget(table, area);
+        }
+    }
+
+    // Always draw the thin header separator after rendering the table
+    if area.height >= 2 {
+        let sep_y = area.y.saturating_add(1);
+        if sep_y < area.y + area.height {
+            let width = area.width as usize;
+            let line = "─".repeat(width);
+            let rect = Rect {
+                x: area.x,
+                y: sep_y,
+                width: area.width,
+                height: 1,
+            };
+            let sep = Paragraph::new(Line::from(Span::styled(
+                line,
+                Style::default().fg(ratatui::style::Color::Rgb(170, 170, 180)),
+            )));
+            f.render_widget(sep, rect);
         }
     }
 
@@ -374,15 +400,16 @@ fn draw_underlines(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         return;
     }
 
-    // Header consumes 1 line; each row consumes 2 lines; underline on the second line
-    let usable_height = area.height.saturating_sub(1);
+    // Header consumes 2 lines; each row consumes 2 lines; underline on the second line
+    let header_lines = 2u16;
+    let usable_height = area.height.saturating_sub(header_lines);
     let visible_rows = (usable_height / 2) as usize;
     let width = area.width as usize;
 
     for (i, r) in s.rows.iter().take(visible_rows).enumerate() {
         let ratio = (r.encdps / max_dps).clamp(0.0, 1.0);
         let filled = (ratio * width as f64).round() as usize;
-        let y = area.y + 1 + (i as u16) * 2 + 1; // line directly under row
+        let y = area.y + header_lines + (i as u16) * 2 + 1; // line directly under row
         if y >= area.y + area.height {
             break;
         }
