@@ -1,0 +1,74 @@
+# AGENTS.md
+
+## Goal
+Provide a minimal, language-agnostic description of how to consume **IINACT** (https://github.com/marzent/IINACT)
+from a client to build custom visualizations (e.g., Rust + ratatui).
+
+## WebSocket Endpoint
+- Default: `ws://127.0.0.1:10501/ws`
+- Transport: plain WebSocket (no auth).
+
+## Protocol Overview (OverlayPlugin-compatible)
+IINACT implements the OverlayPlugin WebSocket API used by ACT overlays.
+Two interaction styles exist:
+
+1. **Handler calls** (request/response): send a JSON object with a `call` field, receive one JSON reply.
+   - Example: `{"call":"getLanguage"}` → `{"language":"English","languageId":"1","region":"Global","regionId":"1"}`
+
+2. **Event subscription** (server push): send `{"call":"subscribe","events":[...EventNames...]}` to begin receiving streaming events.
+   - Common events to subscribe to:
+     - `CombatData` – encounter summary plus per-combatant stats
+     - `LogLine` – raw log lines
+
+### Typical `CombatData` payload
+```json
+{
+  "type": "CombatData",
+  "Encounter": {
+    "title": "Encounter Name",
+    "duration": "02:34",
+    "encdps": "12345",
+    "damage": "987654",
+    "CurrentZoneName": "Zone Name"
+  },
+  "Combatant": {
+    "Alice": { "Job":"NIN", "encdps":"4567", "crithit%":"21%", "DirectHit%":"28%", "deaths":"0" },
+    "Bob":   { "Job":"WHM", "encdps":"1234", "crithit%":"12%", "DirectHit%":"5%",  "deaths":"1" }
+  },
+  "isActive": "true"
+}
+```
+Notes:
+- Numeric values often arrive as **strings** and may contain commas; normalize before sorting/aggregating.
+- Keys can differ by **case** across implementations (`encdps` vs `ENCDPS`); prefer case-insensitive lookup.
+
+### Typical `LogLine` payload
+```json
+{ "type": "LogLine", "line": "21|2025-01-01T12:34:56.789|..." }
+```
+
+## Reference Client (Python)
+See `query_iinact.py` for a minimal, dependency-light client that:
+- Connects to the WS
+- Performs a handler call (`getLanguage`)
+- Subscribes to `CombatData` and `LogLine`
+- Pretty-prints an encounter table, sorted by ENCDPS
+
+### Running
+```bash
+pip install websockets
+python3 query_iinact.py --ws ws://127.0.0.1:10501/ws
+# Exit after the first CombatData:
+python3 query_iinact.py --once
+# Show LogLine summaries too:
+python3 query_iinact.py --show-logline
+```
+
+## Guidance for Agents (Rust ratatui target)
+- Use a WS client (e.g., `tokio-tungstenite`) to connect to `ws://127.0.0.1:10501/ws`.
+- Send `{"call":"getLanguage"}` to verify connectivity.
+- Send `{"call":"subscribe","events":["CombatData","LogLine"]}` to begin streaming.
+- Maintain a state struct with the latest `Encounter` plus a map of combatants.
+- Normalize numeric strings to floats (strip commas and percent signs).
+- Present a live table sorted by ENCDPS; refresh on each incoming `CombatData`.
+- Optional: filter out `isActive == "false"` to avoid stale snapshots.
