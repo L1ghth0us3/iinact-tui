@@ -9,6 +9,7 @@ A fast, dependency‑light terminal DPS meter for FFXIV that connects to an IINA
 ## Features
 - Auto‑connects to IINACT and subscribes to `CombatData` and `LogLine`.
 - Live table sorted by ENCDPS; party‑only rows (known job codes).
+- Damage share column (Share%) with higher priority than ENCDPS/Job on narrow layouts.
 - Right‑aligned numeric headers and values (ENCDPS, Crit%, DH%, Deaths).
 - Responsive columns at small widths (minimal and name‑only modes).
 - Decorations (cycle with `d`):
@@ -36,7 +37,7 @@ The app will connect automatically to `ws://127.0.0.1:10501/ws` and begin render
 
 ## Notes & Behavior
 - Party‑only: rows are filtered to common job codes (PLD/WAR/DRK/GNB, WHM/SCH/AST/SGE, MNK/DRG/NIN/SAM/RPR/VPR, BRD/MCH/DNC, BLM/SMN/RDM/PCT, BLU).
-- Normalization: numeric fields arrive as strings; commas/percent signs are stripped before parsing for sorting/ratios.
+- Normalization: numeric fields arrive as strings; commas/percent signs are stripped before parsing for sorting/ratios. Damage share is computed from per‑combatant damage over encounter total.
 - Case‑insensitive: keys like `encdps`/`ENCDPS` are handled consistently.
 - Encounter naming: while a fight is active some servers report generic names (e.g., "Encounter"); the header falls back to Zone until a final name is available.
 - Background: widgets avoid setting a background color so your terminal theme (blur/transparency) stays visible. The header separator uses a subtle gray; background meters intentionally set a background for the meter fill only.

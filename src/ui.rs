@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
 use ratatui::Frame;
 
-use crate::model::{AppSnapshot, Decoration};
+use crate::model::{AppSnapshot, Decoration, ViewMode};
 use crate::theme::{header_style, job_color, role_bar_color, title_style, value_style, TEXT};
 
 pub fn draw(f: &mut Frame, s: &AppSnapshot) {
@@ -46,33 +46,37 @@ fn draw_header(f: &mut Frame, area: Rect, s: &AppSnapshot) {
     let w = area.width as usize;
 
     let line_top = if let Some(enc) = &s.encounter {
-        // Top header now excludes Encounter/Zone; show compact combat metrics only
+        // Top header now excludes Encounter/Zone; show compact metrics (DPS or HEAL mode)
+        let (metric_label, metric_val, total_label, total_val) = match s.mode {
+            ViewMode::Dps => ("ENCDPS", enc.encdps.as_str(), "Damage", enc.damage.as_str()),
+            ViewMode::Heal => ("ENCHPS", enc.enchps.as_str(), "Healed", enc.healed.as_str()),
+        };
         if w >= 56 {
             Line::from(vec![
                 Span::styled("Dur:", header_style()),
                 Span::styled(format!(" {} ", enc.duration), value_style()),
                 Span::raw("| "),
-                Span::styled("ENCDPS:", header_style()),
-                Span::styled(format!(" {} ", enc.encdps), value_style()),
+                Span::styled(format!("{}:", metric_label), header_style()),
+                Span::styled(format!(" {} ", metric_val), value_style()),
                 Span::raw("| "),
-                Span::styled("Damage:", header_style()),
-                Span::styled(format!(" {}", enc.damage), value_style()),
+                Span::styled(format!("{}:", total_label), header_style()),
+                Span::styled(format!(" {}", total_val), value_style()),
             ])
         } else if w >= 40 {
             Line::from(vec![
                 Span::styled("Dur:", header_style()),
                 Span::styled(format!(" {} ", enc.duration), value_style()),
-                Span::styled("ENCDPS:", header_style()),
-                Span::styled(format!(" {}", enc.encdps), value_style()),
+                Span::styled(format!("{}:", metric_label), header_style()),
+                Span::styled(format!(" {}", metric_val), value_style()),
             ])
         } else if w >= 28 {
             Line::from(vec![
                 Span::styled(enc.duration.as_str(), value_style()),
                 Span::raw("  "),
-                Span::styled(enc.encdps.as_str(), value_style()),
+                Span::styled(metric_val, value_style()),
             ])
         } else {
-            Line::from(vec![Span::styled(enc.encdps.as_str(), value_style())])
+            Line::from(vec![Span::styled(metric_val, value_style())])
         }
     } else {
         Line::from(vec![Span::raw("Waiting for data...")])
@@ -160,118 +164,225 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         draw_bg_meters(f, area, s);
     }
 
+    let heal_mode = matches!(s.mode, ViewMode::Heal);
     match variant {
         Variant::Full => {
-            let headers = Row::new([
-                Cell::from("Name"),
-                Cell::from(right_align("Job", 5)),
-                Cell::from(right_align("ENCDPS", 10)),
-                Cell::from(right_align("Crit%", 8)),
-                Cell::from(right_align("DH%", 8)),
-                Cell::from(right_align("Deaths", 8)),
-            ])
+            let headers = if !heal_mode {
+                Row::new([
+                    Cell::from("Name"),
+                    Cell::from(right_align("Share%", 7)),
+                    Cell::from(right_align("ENCDPS", 10)),
+                    Cell::from(right_align("Job", 5)),
+                    Cell::from(right_align("Crit%", 8)),
+                    Cell::from(right_align("DH%", 8)),
+                    Cell::from(right_align("Deaths", 8)),
+                ])
+            } else {
+                Row::new([
+                    Cell::from("Name"),
+                    Cell::from(right_align("Heal%", 7)),
+                    Cell::from(right_align("ENCHPS", 10)),
+                    Cell::from(right_align("Job", 5)),
+                    Cell::from(right_align("Overheal%", 10)),
+                    Cell::from(right_align("Deaths", 8)),
+                ])
+            }
             .height(2)
             .style(header_style());
             let rows = s.rows.iter().map(|r| {
-                let job = right_align(&r.job, 5);
-                let enc = right_align(&r.encdps_str, 10);
-                let crit = right_align(&r.crit, 8);
-                let dh = right_align(&r.dh, 8);
-                let deaths = right_align(&r.deaths, 8);
-                Row::new([
-                    Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
-                    Cell::from(job),
-                    Cell::from(enc),
-                    Cell::from(crit),
-                    Cell::from(dh),
-                    Cell::from(deaths),
-                ])
+                if !heal_mode {
+                    let share = right_align(&r.share_str, 7);
+                    let enc = right_align(&r.encdps_str, 10);
+                    let job = right_align(&r.job, 5);
+                    let crit = right_align(&r.crit, 8);
+                    let dh = right_align(&r.dh, 8);
+                    let deaths = right_align(&r.deaths, 8);
+                    Row::new([
+                        Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
+                        Cell::from(share),
+                        Cell::from(enc),
+                        Cell::from(job),
+                        Cell::from(crit),
+                        Cell::from(dh),
+                        Cell::from(deaths),
+                    ])
+                } else {
+                    let share = right_align(&r.heal_share_str, 7);
+                    let enc = right_align(&r.enchps_str, 10);
+                    let job = right_align(&r.job, 5);
+                    let oh = right_align(&r.overheal_pct, 10);
+                    let deaths = right_align(&r.deaths, 8);
+                    Row::new([
+                        Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
+                        Cell::from(share),
+                        Cell::from(enc),
+                        Cell::from(job),
+                        Cell::from(oh),
+                        Cell::from(deaths),
+                    ])
+                }
                 .height(row_h)
             });
-            let table = Table::new(
-                rows,
-                [
+            let widths: Vec<Constraint> = if !heal_mode {
+                vec![
                     Constraint::Percentage(34),
+                    Constraint::Length(7),
+                    Constraint::Length(10),
+                    Constraint::Length(5),
+                    Constraint::Length(8),
+                    Constraint::Length(8),
+                    Constraint::Length(8),
+                ]
+            } else {
+                vec![
+                    Constraint::Percentage(34),
+                    Constraint::Length(7),
+                    Constraint::Length(10),
                     Constraint::Length(5),
                     Constraint::Length(10),
                     Constraint::Length(8),
-                    Constraint::Length(8),
-                    Constraint::Length(8),
-                ],
-            )
-            .header(headers)
-            .block(Block::default().borders(Borders::NONE))
-            .column_spacing(1);
+                ]
+            };
+            let table = Table::new(rows, widths)
+                .header(headers)
+                .block(Block::default().borders(Borders::NONE))
+                .column_spacing(1);
             f.render_widget(table, area);
         }
         Variant::NoDeaths => {
-            let headers = Row::new([
-                Cell::from("Name"),
-                Cell::from(right_align("Job", 5)),
-                Cell::from(right_align("ENCDPS", 9)),
-                Cell::from(right_align("Crit%", 6)),
-                Cell::from(right_align("DH%", 6)),
-            ])
+            let headers = if !heal_mode {
+                Row::new([
+                    Cell::from("Name"),
+                    Cell::from(right_align("Share%", 7)),
+                    Cell::from(right_align("ENCDPS", 9)),
+                    Cell::from(right_align("Job", 5)),
+                    Cell::from(right_align("Crit%", 6)),
+                    Cell::from(right_align("DH%", 6)),
+                ])
+            } else {
+                Row::new([
+                    Cell::from("Name"),
+                    Cell::from(right_align("Heal%", 7)),
+                    Cell::from(right_align("ENCHPS", 9)),
+                    Cell::from(right_align("Job", 5)),
+                    Cell::from(right_align("Overheal%", 9)),
+                ])
+            }
             .height(2)
             .style(header_style());
             let rows = s.rows.iter().map(|r| {
-                let job = right_align(&r.job, 5);
-                let enc = right_align(&r.encdps_str, 9);
-                let crit = right_align(&r.crit, 6);
-                let dh = right_align(&r.dh, 6);
-                Row::new([
-                    Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
-                    Cell::from(job),
-                    Cell::from(enc),
-                    Cell::from(crit),
-                    Cell::from(dh),
-                ])
+                if !heal_mode {
+                    let share = right_align(&r.share_str, 7);
+                    let enc = right_align(&r.encdps_str, 9);
+                    let job = right_align(&r.job, 5);
+                    let crit = right_align(&r.crit, 6);
+                    let dh = right_align(&r.dh, 6);
+                    Row::new([
+                        Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
+                        Cell::from(share),
+                        Cell::from(enc),
+                        Cell::from(job),
+                        Cell::from(crit),
+                        Cell::from(dh),
+                    ])
+                } else {
+                    let share = right_align(&r.heal_share_str, 7);
+                    let enc = right_align(&r.enchps_str, 9);
+                    let job = right_align(&r.job, 5);
+                    let oh = right_align(&r.overheal_pct, 9);
+                    Row::new([
+                        Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
+                        Cell::from(share),
+                        Cell::from(enc),
+                        Cell::from(job),
+                        Cell::from(oh),
+                    ])
+                }
                 .height(row_h)
             });
-            let table = Table::new(
-                rows,
-                [
-                    Constraint::Percentage(40),
+            let widths: Vec<Constraint> = if !heal_mode {
+                vec![
+                    Constraint::Percentage(38),
+                    Constraint::Length(7),
+                    Constraint::Length(9),
+                    Constraint::Length(5),
+                    Constraint::Length(6),
+                    Constraint::Length(6),
+                ]
+            } else {
+                vec![
+                    Constraint::Percentage(44),
+                    Constraint::Length(7),
+                    Constraint::Length(9),
                     Constraint::Length(5),
                     Constraint::Length(9),
-                    Constraint::Length(6),
-                    Constraint::Length(6),
-                ],
-            )
-            .header(headers)
-            .block(Block::default().borders(Borders::NONE))
-            .column_spacing(1);
+                ]
+            };
+            let table = Table::new(rows, widths)
+                .header(headers)
+                .block(Block::default().borders(Borders::NONE))
+                .column_spacing(1);
             f.render_widget(table, area);
         }
         Variant::NoDHDeaths => {
-            let headers = Row::new([
-                Cell::from("Name"),
-                Cell::from(right_align("Job", 5)),
-                Cell::from(right_align("ENCDPS", 9)),
-                Cell::from(right_align("Crit%", 6)),
-            ])
+            let headers = if !heal_mode {
+                Row::new([
+                    Cell::from("Name"),
+                    Cell::from(right_align("Share%", 7)),
+                    Cell::from(right_align("ENCDPS", 9)),
+                    Cell::from(right_align("Crit%", 6)),
+                ])
+            } else {
+                Row::new([
+                    Cell::from("Name"),
+                    Cell::from(right_align("Heal%", 7)),
+                    Cell::from(right_align("ENCHPS", 9)),
+                    Cell::from(right_align("Job", 5)),
+                ])
+            }
             .height(2)
             .style(header_style());
             let rows = s.rows.iter().map(|r| {
-                let job = right_align(&r.job, 5);
-                let enc = right_align(&r.encdps_str, 9);
-                let crit = right_align(&r.crit, 6);
-                Row::new([
-                    Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
-                    Cell::from(job),
-                    Cell::from(enc),
-                    Cell::from(crit),
-                ])
+                if !heal_mode {
+                    let share = right_align(&r.share_str, 7);
+                    let enc = right_align(&r.encdps_str, 9);
+                    let crit = right_align(&r.crit, 6);
+                    Row::new([
+                        Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
+                        Cell::from(share),
+                        Cell::from(enc),
+                        Cell::from(crit),
+                    ])
+                } else {
+                    let share = right_align(&r.heal_share_str, 7);
+                    let enc = right_align(&r.enchps_str, 9);
+                    let job = right_align(&r.job, 5);
+                    Row::new([
+                        Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
+                        Cell::from(share),
+                        Cell::from(enc),
+                        Cell::from(job),
+                    ])
+                }
                 .height(row_h)
             });
             let table = Table::new(
                 rows,
-                [
-                    Constraint::Percentage(50),
-                    Constraint::Length(5),
-                    Constraint::Length(9),
-                    Constraint::Length(6),
-                ],
+                if !heal_mode {
+                    [
+                        Constraint::Percentage(54),
+                        Constraint::Length(7),
+                        Constraint::Length(9),
+                        Constraint::Length(6),
+                    ]
+                } else {
+                    [
+                        Constraint::Percentage(58),
+                        Constraint::Length(7),
+                        Constraint::Length(9),
+                        Constraint::Length(5),
+                    ]
+                },
             )
             .header(headers)
             .block(Block::default().borders(Borders::NONE))
@@ -279,29 +390,47 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
             f.render_widget(table, area);
         }
         Variant::Minimal => {
-            let headers = Row::new([
-                Cell::from("Name"),
-                Cell::from(right_align("ENCDPS", 9)),
-                Cell::from(right_align("Job", 4)),
-            ])
+            let headers = if !heal_mode {
+                Row::new([
+                    Cell::from("Name"),
+                    Cell::from(right_align("Share%", 6)),
+                    Cell::from(right_align("ENCDPS", 9)),
+                ])
+            } else {
+                Row::new([
+                    Cell::from("Name"),
+                    Cell::from(right_align("Heal%", 6)),
+                    Cell::from(right_align("ENCHPS", 9)),
+                ])
+            }
             .height(2)
             .style(header_style());
             let rows = s.rows.iter().map(|r| {
-                let enc = right_align(&r.encdps_str, 9);
-                let job = right_align(&r.job, 4);
-                Row::new([
-                    Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
-                    Cell::from(enc),
-                    Cell::from(job),
-                ])
+                if !heal_mode {
+                    let share = right_align(&r.share_str, 6);
+                    let enc = right_align(&r.encdps_str, 9);
+                    Row::new([
+                        Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
+                        Cell::from(share),
+                        Cell::from(enc),
+                    ])
+                } else {
+                    let share = right_align(&r.heal_share_str, 6);
+                    let enc = right_align(&r.enchps_str, 9);
+                    Row::new([
+                        Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
+                        Cell::from(share),
+                        Cell::from(enc),
+                    ])
+                }
                 .height(row_h)
             });
             let table = Table::new(
                 rows,
                 [
-                    Constraint::Percentage(60),
+                    Constraint::Percentage(64),
+                    Constraint::Length(6),
                     Constraint::Length(9),
-                    Constraint::Length(4),
                 ],
             )
             .header(headers)
@@ -310,12 +439,20 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
             f.render_widget(table, area);
         }
         Variant::NameOnly => {
-            // Compose a single column: "Name  [ENCDPS]"
-            let headers = Row::new([Cell::from("Name (ENCDPS)")])
-                .height(2)
-                .style(header_style());
+            // Compose a single column: "Name  [Share%]"
+            let headers = Row::new([Cell::from(if !heal_mode {
+                "Name (Share%)"
+            } else {
+                "Name (Heal%)"
+            })])
+            .height(2)
+            .style(header_style());
             let rows = s.rows.iter().map(|r| {
-                let text = format!("{}  [{}]", r.name, r.encdps_str);
+                let text = if !heal_mode {
+                    format!("{}  [{}]", r.name, r.share_str)
+                } else {
+                    format!("{}  [{}]", r.name, r.heal_share_str)
+                };
                 Row::new([Cell::from(text).style(Style::default().fg(job_color(&r.job)))])
                     .height(row_h)
             });
@@ -370,6 +507,9 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
             Span::styled(" d ", title_style()),
             Span::styled(s.decoration.wide_label(), header_style()),
             Span::raw("  |  "),
+            Span::styled(" m ", title_style()),
+            Span::styled(s.mode.short_label(), header_style()),
+            Span::raw("  |  "),
             Span::styled("Status:", header_style()),
             Span::styled(format!(" {}", status), value_style()),
         ])
@@ -381,16 +521,20 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
             Span::styled(" d ", title_style()),
             Span::styled(s.decoration.short_label(), header_style()),
             Span::raw("  |  "),
+            Span::styled(" m ", title_style()),
+            Span::styled(s.mode.short_label(), header_style()),
+            Span::raw("  |  "),
             Span::styled(status, value_style()),
         ])
     } else if w >= 36 {
         Line::from(vec![
             Span::styled(" q ", title_style()),
             Span::styled(" d ", title_style()),
+            Span::styled(" m ", title_style()),
             Span::styled(status, value_style()),
         ])
     } else {
-        Line::from(vec![Span::styled("qd", title_style())])
+        Line::from(vec![Span::styled("qdm", title_style())])
     };
 
     let widget = Paragraph::new(line)

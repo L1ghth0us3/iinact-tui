@@ -72,6 +72,13 @@ pub fn parse_combat_data(value: &Value) -> Option<(EncounterSummary, Vec<Combata
         .or_else(|| get_ci(&enc_obj, "damageTotal"))
         .map(val_to_string)
         .unwrap_or_default();
+    let enc_enchps = get_ci(&enc_obj, "enchps")
+        .or_else(|| get_ci(&enc_obj, "ENCHPS"))
+        .map(val_to_string)
+        .unwrap_or_default();
+    let enc_healed = get_ci(&enc_obj, "healed")
+        .map(val_to_string)
+        .unwrap_or_default();
 
     let is_active = obj
         .get("isActive")
@@ -84,7 +91,9 @@ pub fn parse_combat_data(value: &Value) -> Option<(EncounterSummary, Vec<Combata
         zone: enc_zone,
         duration: enc_duration,
         encdps: enc_encdps,
-        damage: enc_damage,
+        damage: enc_damage.clone(),
+        enchps: enc_enchps,
+        healed: enc_healed,
         is_active,
     };
 
@@ -113,6 +122,12 @@ pub fn parse_combat_data(value: &Value) -> Option<(EncounterSummary, Vec<Combata
             .map(val_to_string)
             .unwrap_or_else(|| "0".into());
         let encdps = to_f64_any(&encdps_s);
+        // total damage per combatant
+        let damage_s = get_ci(s, "damage")
+            .or_else(|| get_ci(s, "Damage"))
+            .map(val_to_string)
+            .unwrap_or_else(|| "0".into());
+        let damage = to_f64_any(&damage_s);
         let crit = get_ci(s, "crithit%")
             .or_else(|| get_ci(s, "Crit%"))
             .or_else(|| get_ci(s, "crithit"))
@@ -130,15 +145,96 @@ pub fn parse_combat_data(value: &Value) -> Option<(EncounterSummary, Vec<Combata
             .map(val_to_string)
             .unwrap_or_else(|| "0".into());
 
+        // Healing stats
+        let enchps_s = get_ci(s, "enchps")
+            .or_else(|| get_ci(s, "ENCHPS"))
+            .map(val_to_string)
+            .unwrap_or_else(|| "0".into());
+        let enchps = to_f64_any(&enchps_s);
+        let healed_s = get_ci(s, "healed")
+            .map(val_to_string)
+            .unwrap_or_else(|| "0".into());
+        let healed = to_f64_any(&healed_s);
+        let overheal_pct = get_ci(s, "OverHealPct")
+            .map(val_to_string)
+            .unwrap_or_default();
+
         rows.push(CombatantRow {
             name,
             job: job_up,
             encdps,
             encdps_str: encdps_s,
+            damage,
+            damage_str: damage_s,
+            share: 0.0,
+            share_str: String::new(),
+            enchps,
+            enchps_str: enchps_s,
+            healed,
+            healed_str: healed_s,
+            heal_share: 0.0,
+            heal_share_str: String::new(),
+            overheal_pct,
             crit,
             dh,
             deaths,
         });
+    }
+
+    // Determine encounter total damage and compute shares
+    let mut total_damage = to_f64_any(&enc_damage);
+    if total_damage <= 0.0 {
+        total_damage = rows.iter().map(|r| r.damage).sum::<f64>();
+    }
+    if total_damage > 0.0 {
+        for r in &mut rows {
+            // Prefer server-provided damage% when available
+            if let Some(pct_val) = obj
+                .get("Combatant")
+                .and_then(|c| c.get(&r.name))
+                .and_then(|v| v.as_object())
+                .and_then(|m| get_ci(m, "damage%"))
+            {
+                let pct = to_f64_any(val_to_string(pct_val));
+                r.share = (pct / 100.0).clamp(0.0, 1.0);
+            } else {
+                r.share = (r.damage / total_damage).clamp(0.0, 1.0);
+            }
+            r.share_str = format!("{:.1}%", r.share * 100.0);
+        }
+    } else {
+        for r in &mut rows {
+            r.share = 0.0;
+            r.share_str = "0.0%".into();
+        }
+    }
+
+    // Healing totals and shares
+    let mut total_healed = to_f64_any(&encounter.healed);
+    if total_healed <= 0.0 {
+        total_healed = rows.iter().map(|r| r.healed).sum::<f64>();
+    }
+    if total_healed > 0.0 {
+        for r in &mut rows {
+            // Prefer server-provided healed% when available
+            if let Some(pct_val) = obj
+                .get("Combatant")
+                .and_then(|c| c.get(&r.name))
+                .and_then(|v| v.as_object())
+                .and_then(|m| get_ci(m, "healed%"))
+            {
+                let pct = to_f64_any(val_to_string(pct_val));
+                r.heal_share = (pct / 100.0).clamp(0.0, 1.0);
+            } else {
+                r.heal_share = (r.healed / total_healed).clamp(0.0, 1.0);
+            }
+            r.heal_share_str = format!("{:.1}%", r.heal_share * 100.0);
+        }
+    } else {
+        for r in &mut rows {
+            r.heal_share = 0.0;
+            r.heal_share_str = "0.0%".into();
+        }
     }
 
     // Sort by numeric DPS desc, stable by name

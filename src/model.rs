@@ -13,6 +13,7 @@ pub struct AppSnapshot {
     pub encounter: Option<EncounterSummary>,
     pub rows: Vec<CombatantRow>,
     pub decoration: Decoration,
+    pub mode: ViewMode,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -22,6 +23,7 @@ pub struct AppState {
     pub encounter: Option<EncounterSummary>,
     pub rows: Vec<CombatantRow>,
     pub decoration: Decoration,
+    pub mode: ViewMode,
 }
 
 impl AppState {
@@ -48,6 +50,7 @@ impl AppState {
             encounter: self.encounter.clone(),
             rows: self.rows.clone(),
             decoration: self.decoration,
+            mode: self.mode,
         }
     }
 }
@@ -59,6 +62,8 @@ pub struct EncounterSummary {
     pub duration: String,
     pub encdps: String,
     pub damage: String,
+    pub enchps: String,
+    pub healed: String,
     pub is_active: bool,
 }
 
@@ -68,6 +73,17 @@ pub struct CombatantRow {
     pub job: String,
     pub encdps: f64,
     pub encdps_str: String,
+    pub damage: f64,
+    pub damage_str: String,
+    pub share: f64,        // 0.0..=1.0
+    pub share_str: String, // e.g., "23.4%"
+    pub enchps: f64,
+    pub enchps_str: String,
+    pub healed: f64,
+    pub healed_str: String,
+    pub heal_share: f64,
+    pub heal_share_str: String,
+    pub overheal_pct: String,
     pub crit: String,
     pub dh: String,
     pub deaths: String,
@@ -145,6 +161,29 @@ impl Decoration {
             Decoration::Underline => "Decor: underline",
             Decoration::Background => "Decor: background",
             Decoration::None => "Decor: none",
+        }
+    }
+}
+
+// High-level view mode of the table
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum ViewMode {
+    #[default]
+    Dps,
+    Heal,
+}
+
+impl ViewMode {
+    pub fn next(self) -> Self {
+        match self {
+            ViewMode::Dps => ViewMode::Heal,
+            ViewMode::Heal => ViewMode::Dps,
+        }
+    }
+    pub fn short_label(self) -> &'static str {
+        match self {
+            ViewMode::Dps => "mode:DPS",
+            ViewMode::Heal => "mode:HEAL",
         }
     }
 }

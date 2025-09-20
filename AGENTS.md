@@ -75,7 +75,7 @@ python3 query_iinact.py --show-logline
 
 ### Current TUI Behavior (v0.2.0)
 - Rendering
-  - Table columns: Name, Job, ENCDPS, Crit%, DH%, Deaths (numeric columns are right‑aligned).
+  - Table columns: Name, Share%, ENCDPS, Job, Crit%, DH%, Deaths (numeric columns are right‑aligned). On narrow widths, Share% survives longer than ENCDPS/Job.
   - Responsive breakpoints hide columns at narrow widths (down to Name‑only).
   - Header: line 1 shows Encounter/Zone; line 2 shows Dur | ENCDPS | Damage; a dim gray separator appears under the table header.
   - Party‑only rows using a known job set; case‑insensitive key lookup.

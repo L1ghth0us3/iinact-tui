@@ -66,6 +66,10 @@ async fn main() -> Result<()> {
                         let mut s = state.write().await;
                         s.decoration = s.decoration.next();
                     }
+                    KeyCode::Char('m') => {
+                        let mut s = state.write().await;
+                        s.mode = s.mode.next();
+                    }
                     _ => {}
                 }
             }
