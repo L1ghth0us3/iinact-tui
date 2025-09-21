@@ -4,8 +4,55 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::config::AppConfig;
+use crate::history::HistoryDay;
 
 pub const WS_URL_DEFAULT: &str = "ws://127.0.0.1:10501/ws";
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum HistoryPanelLevel {
+    #[default]
+    Dates,
+    Encounters,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HistoryPanel {
+    pub visible: bool,
+    pub loading: bool,
+    pub level: HistoryPanelLevel,
+    pub days: Vec<HistoryDay>,
+    pub selected_day: usize,
+    pub selected_encounter: usize,
+    pub error: Option<String>,
+}
+
+impl Default for HistoryPanel {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            loading: false,
+            level: HistoryPanelLevel::Dates,
+            days: Vec::new(),
+            selected_day: 0,
+            selected_encounter: 0,
+            error: None,
+        }
+    }
+}
+
+impl HistoryPanel {
+    pub fn reset(&mut self) {
+        self.loading = false;
+        self.level = HistoryPanelLevel::Dates;
+        self.selected_day = 0;
+        self.selected_encounter = 0;
+        self.error = None;
+    }
+
+    pub fn current_day(&self) -> Option<&HistoryDay> {
+        self.days.get(self.selected_day)
+    }
+}
 
 // App-side snapshot used by the UI
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
@@ -21,6 +68,7 @@ pub struct AppSnapshot {
     pub settings: AppSettings,
     pub show_settings: bool,
     pub settings_cursor: SettingsField,
+    pub history: HistoryPanel,
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -69,6 +117,7 @@ pub struct AppState {
     pub settings: AppSettings,
     pub show_settings: bool,
     pub settings_cursor: SettingsField,
+    pub history: HistoryPanel,
 }
 
 impl AppState {
@@ -102,6 +151,36 @@ impl AppState {
                     self.last_active = Some(now);
                 }
             }
+            AppEvent::HistoryLoaded { days } => {
+                self.history.loading = false;
+                self.history.error = None;
+                self.history.days = days;
+                if self.history.selected_day >= self.history.days.len() {
+                    self.history.selected_day = 0;
+                }
+                if let Some(day) = self.history.current_day() {
+                    if day.encounters.is_empty() {
+                        self.history.selected_encounter = 0;
+                    } else if self.history.selected_encounter >= day.encounters.len() {
+                        self.history.selected_encounter = day.encounters.len() - 1;
+                    }
+                } else {
+                    self.history.selected_encounter = 0;
+                }
+                if self.history.level == HistoryPanelLevel::Encounters
+                    && self
+                        .history
+                        .current_day()
+                        .map(|day| day.encounters.is_empty())
+                        .unwrap_or(true)
+                {
+                    self.history.level = HistoryPanelLevel::Dates;
+                }
+            }
+            AppEvent::HistoryError { message } => {
+                self.history.loading = false;
+                self.history.error = Some(message);
+            }
         }
     }
 
@@ -123,6 +202,7 @@ impl AppState {
             settings: self.settings.clone(),
             show_settings: self.show_settings,
             settings_cursor: self.settings_cursor,
+            history: self.history.clone(),
         }
     }
 }
@@ -234,6 +314,96 @@ impl AppState {
         self.decoration = self.settings.default_decoration;
         self.mode = self.settings.default_mode;
     }
+
+    pub fn toggle_history(&mut self) -> bool {
+        if self.history.visible {
+            self.history.visible = false;
+            self.history.reset();
+            false
+        } else {
+            self.history.visible = true;
+            self.history.loading = true;
+            self.history.error = None;
+            self.history.level = HistoryPanelLevel::Dates;
+            self.history.selected_day = 0;
+            self.history.selected_encounter = 0;
+            true
+        }
+    }
+
+    pub fn history_set_loading(&mut self) {
+        self.history.loading = true;
+        self.history.error = None;
+    }
+
+    pub fn history_move_selection(&mut self, delta: i32) {
+        if !self.history.visible || self.history.loading {
+            return;
+        }
+        match self.history.level {
+            HistoryPanelLevel::Dates => {
+                if self.history.days.is_empty() {
+                    return;
+                }
+                let len = self.history.days.len() as i32;
+                let current = self.history.selected_day as i32;
+                let mut next = current + delta;
+                if next < 0 {
+                    next = 0;
+                } else if next >= len {
+                    next = len - 1;
+                }
+                self.history.selected_day = next as usize;
+                if let Some(day) = self.history.current_day() {
+                    if day.encounters.is_empty() {
+                        self.history.selected_encounter = 0;
+                    } else if self.history.selected_encounter >= day.encounters.len() {
+                        self.history.selected_encounter = day.encounters.len() - 1;
+                    }
+                }
+            }
+            HistoryPanelLevel::Encounters => {
+                if let Some(day) = self.history.current_day() {
+                    if day.encounters.is_empty() {
+                        return;
+                    }
+                    let len = day.encounters.len() as i32;
+                    let current = self.history.selected_encounter as i32;
+                    let mut next = current + delta;
+                    if next < 0 {
+                        next = 0;
+                    } else if next >= len {
+                        next = len - 1;
+                    }
+                    self.history.selected_encounter = next as usize;
+                }
+            }
+        }
+    }
+
+    pub fn history_enter(&mut self) {
+        if !self.history.visible || self.history.loading {
+            return;
+        }
+        if self.history.level == HistoryPanelLevel::Dates {
+            if let Some(day) = self.history.current_day() {
+                if !day.encounters.is_empty() {
+                    self.history.level = HistoryPanelLevel::Encounters;
+                    self.history.selected_encounter = 0;
+                }
+            }
+        }
+    }
+
+    pub fn history_back(&mut self) {
+        if !self.history.visible {
+            return;
+        }
+        if self.history.level == HistoryPanelLevel::Encounters {
+            self.history.level = HistoryPanelLevel::Dates;
+            self.history.selected_encounter = 0;
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -277,6 +447,12 @@ pub enum AppEvent {
     CombatData {
         encounter: EncounterSummary,
         rows: Vec<CombatantRow>,
+    },
+    HistoryLoaded {
+        days: Vec<HistoryDay>,
+    },
+    HistoryError {
+        message: String,
     },
 }
 

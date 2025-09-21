@@ -2,7 +2,10 @@ use std::time::{Duration, Instant};
 use std::{io, sync::Arc};
 
 use anyhow::Result;
-use crossterm::event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseButton, MouseEvent,
+    MouseEventKind,
+};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -10,6 +13,7 @@ use crossterm::terminal::{
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use tokio::sync::{mpsc, RwLock};
+use tokio::task;
 
 mod config;
 mod history;
@@ -17,10 +21,13 @@ mod model;
 mod parse;
 mod theme;
 mod ui;
+mod ui_history;
 mod ui_idle;
 mod ws_client;
 
-use model::{AppEvent, AppSettings, AppState, SettingsField, WS_URL_DEFAULT};
+use model::{AppEvent, AppSettings, AppState, HistoryPanelLevel, SettingsField, WS_URL_DEFAULT};
+
+const HISTORY_LIST_OFFSET: u16 = 4;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -46,11 +53,13 @@ async fn main() -> Result<()> {
 
     // WS event channel
     let (tx, mut rx) = mpsc::unbounded_channel::<AppEvent>();
+    let event_tx = tx.clone();
 
     // Spawn WS client task (auto-connect and subscribe)
     let ws_url = WS_URL_DEFAULT.to_string();
     let history_tx = history_recorder.clone();
-    tokio::spawn(async move { ws_client::run(ws_url, tx, history_tx).await });
+    let ws_tx = tx.clone();
+    tokio::spawn(async move { ws_client::run(ws_url, ws_tx, history_tx).await });
 
     // TUI init
     enable_raw_mode()?;
@@ -80,55 +89,124 @@ async fn main() -> Result<()> {
 
         // Non-blocking input with small timeout so we keep redrawing
         if event::poll(Duration::from_millis(10))? {
-            if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => running = false,
-                    KeyCode::Char('d') => {
+            match event::read()? {
+                Event::Key(key) => match key.code {
+                    KeyCode::Char('q') | KeyCode::Esc => {
                         let mut s = state.write().await;
-                        s.decoration = s.decoration.next();
-                    }
-                    KeyCode::Char('m') => {
-                        let mut s = state.write().await;
-                        s.mode = s.mode.next();
-                    }
-                    KeyCode::Char('s') => {
-                        let mut s = state.write().await;
-                        s.show_settings = !s.show_settings;
-                        if s.show_settings {
-                            s.settings_cursor = SettingsField::default();
+                        if s.history.visible {
+                            s.history.visible = false;
+                            s.history.reset();
+                        } else {
+                            running = false;
                         }
                     }
-                    KeyCode::Up => {
-                        let mut s = state.write().await;
-                        if s.show_settings {
-                            s.prev_setting();
-                        }
-                    }
-                    KeyCode::Down => {
-                        let mut s = state.write().await;
-                        if s.show_settings {
-                            s.next_setting();
-                        }
-                    }
-                    KeyCode::Left | KeyCode::Right => {
-                        let forward = matches!(key.code, KeyCode::Right);
-                        let updated = {
+                    KeyCode::Char('h') => {
+                        let should_load = {
                             let mut s = state.write().await;
-                            if s.show_settings && s.adjust_selected_setting(forward) {
-                                Some(s.settings.clone())
+                            if s.toggle_history() {
+                                s.history_set_loading();
+                                true
                             } else {
-                                None
+                                false
                             }
                         };
-                        if let Some(settings) = updated {
-                            let cfg: config::AppConfig = settings.into();
-                            if let Err(err) = config::save(&cfg) {
-                                eprintln!("Failed to save config: {err:?}");
-                            }
+                        if should_load {
+                            let store = history_store.clone();
+                            let tx = event_tx.clone();
+                            tokio::spawn(async move {
+                                match task::spawn_blocking(move || store.load_days()).await {
+                                    Ok(Ok(days)) => {
+                                        let _ = tx.send(AppEvent::HistoryLoaded { days });
+                                    }
+                                    Ok(Err(err)) => {
+                                        let _ = tx.send(AppEvent::HistoryError {
+                                            message: err.to_string(),
+                                        });
+                                    }
+                                    Err(err) => {
+                                        let _ = tx.send(AppEvent::HistoryError {
+                                            message: format!("History load failed: {err}"),
+                                        });
+                                    }
+                                }
+                            });
                         }
                     }
-                    _ => {}
+                    _ => {
+                        let history_active = {
+                            let mut s = state.write().await;
+                            if s.history.visible {
+                                match key.code {
+                                    KeyCode::Up => s.history_move_selection(-1),
+                                    KeyCode::Down => s.history_move_selection(1),
+                                    KeyCode::PageUp => s.history_move_selection(-5),
+                                    KeyCode::PageDown => s.history_move_selection(5),
+                                    KeyCode::Left | KeyCode::Backspace => s.history_back(),
+                                    KeyCode::Right | KeyCode::Enter => s.history_enter(),
+                                    _ => {}
+                                }
+                                true
+                            } else {
+                                false
+                            }
+                        };
+                        if history_active {
+                            continue;
+                        }
+
+                        match key.code {
+                            KeyCode::Char('d') => {
+                                let mut s = state.write().await;
+                                s.decoration = s.decoration.next();
+                            }
+                            KeyCode::Char('m') => {
+                                let mut s = state.write().await;
+                                s.mode = s.mode.next();
+                            }
+                            KeyCode::Char('s') => {
+                                let mut s = state.write().await;
+                                s.show_settings = !s.show_settings;
+                                if s.show_settings {
+                                    s.settings_cursor = SettingsField::default();
+                                }
+                            }
+                            KeyCode::Up => {
+                                let mut s = state.write().await;
+                                if s.show_settings {
+                                    s.prev_setting();
+                                }
+                            }
+                            KeyCode::Down => {
+                                let mut s = state.write().await;
+                                if s.show_settings {
+                                    s.next_setting();
+                                }
+                            }
+                            KeyCode::Left | KeyCode::Right => {
+                                let forward = matches!(key.code, KeyCode::Right);
+                                let updated = {
+                                    let mut s = state.write().await;
+                                    if s.show_settings && s.adjust_selected_setting(forward) {
+                                        Some(s.settings.clone())
+                                    } else {
+                                        None
+                                    }
+                                };
+                                if let Some(settings) = updated {
+                                    let cfg: config::AppConfig = settings.into();
+                                    if let Err(err) = config::save(&cfg) {
+                                        eprintln!("Failed to save config: {err:?}");
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                },
+                Event::Mouse(mouse) => {
+                    handle_history_mouse(mouse, &state).await;
                 }
+                _ => {}
             }
         }
     }
@@ -143,4 +221,37 @@ async fn main() -> Result<()> {
     terminal.show_cursor()?;
     history_recorder.shutdown();
     Ok(())
+}
+
+async fn handle_history_mouse(mouse: MouseEvent, state: &Arc<RwLock<AppState>>) {
+    let mut s = state.write().await;
+    if !s.history.visible || s.history.loading {
+        return;
+    }
+
+    match mouse.kind {
+        MouseEventKind::ScrollDown => s.history_move_selection(1),
+        MouseEventKind::ScrollUp => s.history_move_selection(-1),
+        MouseEventKind::Down(MouseButton::Left) => {
+            let index = mouse.row.saturating_sub(HISTORY_LIST_OFFSET) as usize;
+            match s.history.level {
+                HistoryPanelLevel::Dates => {
+                    if !s.history.days.is_empty() {
+                        let max_index = s.history.days.len().saturating_sub(1);
+                        s.history.selected_day = index.min(max_index);
+                    }
+                    s.history_enter();
+                }
+                HistoryPanelLevel::Encounters => {
+                    if let Some(day) = s.history.current_day() {
+                        if !day.encounters.is_empty() {
+                            let max_index = day.encounters.len().saturating_sub(1);
+                            s.history.selected_encounter = index.min(max_index);
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
 }

@@ -8,9 +8,15 @@ use ratatui::Frame;
 
 use crate::model::{AppSnapshot, CombatantRow, Decoration, SettingsField, ViewMode};
 use crate::theme::{header_style, job_color, role_bar_color, title_style, value_style, TEXT};
+use crate::ui_history;
 use crate::ui_idle;
 
 pub fn draw(f: &mut Frame, s: &AppSnapshot) {
+    if s.history.visible {
+        ui_history::draw_history(f, s);
+        return;
+    }
+
     // Split into header + table + footer/status
     let chunks = Layout::default()
         .direction(Direction::Vertical)
