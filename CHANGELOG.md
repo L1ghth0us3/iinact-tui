@@ -16,10 +16,12 @@ Highlights
 - Idle timeout is user-adjustable with `↑/↓` while the settings pane is open and persists between runs.
 - Configuration is stored as JSON under `~/.config/iinact-tui/iinact-tui.config` (override via `IINACT_TUI_CONFIG_DIR`; Windows uses `%APPDATA%\iinact-tui`).
 - Generalized status colors: idle shows dark orange, disconnect shows red.
+- New configuration options allow choosing the default decoration style and opening mode; adjustments apply immediately and persist.
 
 Controls
 - `s`: toggle settings pane.
-- `↑/↓`: adjust idle timeout when the settings pane is visible.
+- `↑/↓`: move the selection inside the settings pane.
+- `←/→`: adjust the highlighted setting.
 - `m`: toggle DPS ↔ HEAL table mode.
 - `d`: cycle table decorations (underline → background → none).
 - `q` / `Esc`: quit.

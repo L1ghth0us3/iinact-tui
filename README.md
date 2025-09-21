@@ -19,6 +19,7 @@ A fast, dependency‑light terminal DPS meter for FFXIV that connects to an IINA
 - Encounter/Zone header on top, Dur | ENCDPS | Damage below it; dim gray header separator.
 - Idle detection with a status indicator that flips to “Connected (idle)” after a configurable timeout.
 - Settings pane (`s`) with persisted configuration stored under `~/.config/iinact-tui/iinact-tui.config` (override via `IINACT_TUI_CONFIG_DIR`).
+- Configurable defaults for decoration style and opening mode, adjustable from the settings pane.
 
 ## Prerequisites
 - Rust 1.74+ (stable) recommended
@@ -38,7 +39,8 @@ The app will connect automatically to `ws://127.0.0.1:10501/ws` and begin render
 - `d` — cycle decorations (underline → background → none)
 - `m` — toggle table mode (DPS ↔ HEAL)
 - `s` — toggle the settings pane
-- `↑/↓` — adjust idle timeout while the settings pane is open (changes are saved immediately)
+- `↑/↓` — move the selection inside the settings pane
+- `←/→` — adjust the selected setting (idle timeout, default decoration, default mode)
 
 ## Notes & Behavior
 - Party‑only: rows are filtered to common job codes (PLD/WAR/DRK/GNB, WHM/SCH/AST/SGE, MNK/DRG/NIN/SAM/RPR/VPR, BRD/MCH/DNC, BLM/SMN/RDM/PCT, BLU).

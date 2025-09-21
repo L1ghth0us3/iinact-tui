@@ -90,7 +90,8 @@ python3 query_iinact.py --show-logline
   - `m` toggles between DPS and healing views.
   - Idle indicator flips the footer to “Connected (idle)” after the configured timeout; disconnected shows red.
 - Settings & persistence
-  - `s` opens a modal settings pane; `↑/↓` adjusts the idle timeout.
+  - `s` opens a modal settings pane; `↑/↓` moves the selection, `←/→` adjusts the highlighted value.
+  - Idle timeout accepts `0` to disable idle mode; defaults for decoration and opening mode are configured here and persist to disk.
   - Settings persist to `~/.config/iinact-tui/iinact-tui.config` (override with `IINACT_TUI_CONFIG_DIR`; Windows uses `%APPDATA%\iinact-tui`).
 - Styling
   - Foreground-only for normal widgets to preserve terminal blur/transparency. Background is used only for the meter fill.
