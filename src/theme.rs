@@ -4,6 +4,8 @@ use ratatui::style::{Color, Style};
 pub const ACCENT: Color = Color::Rgb(200, 60, 255); // neon purple
 pub const ACCENT_2: Color = Color::Rgb(0, 255, 200); // neon cyan-green
 pub const TEXT: Color = Color::Rgb(220, 210, 230);
+pub const STATUS_IDLE: Color = Color::Rgb(205, 102, 0); // dark orange
+pub const STATUS_DISCONNECTED: Color = Color::Rgb(220, 60, 60); // bright red
 
 // Simple job color suggestions tuned toward purple/cyberpunk vibe
 pub fn job_color(job: &str) -> Color {

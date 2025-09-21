@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -14,12 +14,15 @@ pub struct AppSnapshot {
     pub rows: Vec<CombatantRow>,
     pub decoration: Decoration,
     pub mode: ViewMode,
+    pub is_idle: bool,
 }
 
 #[derive(Clone, Default, Debug)]
 pub struct AppState {
     pub connected: bool,
     pub last_update: Option<Instant>,
+    pub last_active: Option<Instant>,
+    pub connected_since: Option<Instant>,
     pub encounter: Option<EncounterSummary>,
     pub rows: Vec<CombatantRow>,
     pub decoration: Decoration,
@@ -29,29 +32,79 @@ pub struct AppState {
 impl AppState {
     pub fn apply(&mut self, evt: AppEvent) {
         match evt {
-            AppEvent::Connected => self.connected = true,
-            AppEvent::Disconnected => self.connected = false,
+            AppEvent::Connected => {
+                self.connected = true;
+                let now = Instant::now();
+                self.last_update = Some(now);
+                self.last_active = None;
+                self.connected_since = Some(now);
+            }
+            AppEvent::Disconnected => {
+                self.connected = false;
+                self.last_update = None;
+                self.last_active = None;
+                self.connected_since = None;
+            }
             AppEvent::CombatData { encounter, rows } => {
+                let now = Instant::now();
                 self.encounter = Some(encounter);
                 self.rows = rows;
-                self.last_update = Some(Instant::now());
+                self.last_update = Some(now);
+                if self
+                    .encounter
+                    .as_ref()
+                    .map(|enc| enc.is_active)
+                    .unwrap_or(false)
+                {
+                    self.last_active = Some(now);
+                }
             }
         }
     }
 
     pub fn clone_snapshot(&self) -> AppSnapshot {
         let now = Instant::now();
+        let elapsed_ms = self
+            .last_update
+            .map(|t| now.saturating_duration_since(t).as_millis())
+            .unwrap_or(0);
         AppSnapshot {
             connected: self.connected,
-            last_update_ms: self
-                .last_update
-                .map(|t| now.saturating_duration_since(t).as_millis())
-                .unwrap_or(0),
+            last_update_ms: elapsed_ms,
             encounter: self.encounter.clone(),
             rows: self.rows.clone(),
             decoration: self.decoration,
             mode: self.mode,
+            is_idle: self.is_idle(now),
         }
+    }
+}
+
+const IDLE_THRESHOLD: Duration = Duration::from_secs(5);
+
+impl AppState {
+    fn is_idle(&self, now: Instant) -> bool {
+        if !self.connected {
+            return false;
+        }
+        if self
+            .encounter
+            .as_ref()
+            .map(|enc| enc.is_active)
+            .unwrap_or(false)
+        {
+            return false;
+        }
+        if let Some(active) = self.last_active {
+            if now.saturating_duration_since(active) >= IDLE_THRESHOLD {
+                return true;
+            }
+            return false;
+        }
+        if let Some(since) = self.connected_since {
+            return now.saturating_duration_since(since) >= IDLE_THRESHOLD;
+        }
+        false
     }
 }
 

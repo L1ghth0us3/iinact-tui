@@ -1,7 +1,9 @@
+use std::borrow::Cow;
+
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::Style;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
+use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table};
 use ratatui::Frame;
 
 use crate::model::{AppSnapshot, Decoration, ViewMode};
@@ -136,6 +138,7 @@ fn draw_header(f: &mut Frame, area: Rect, s: &AppSnapshot) {
 }
 
 fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
+    f.render_widget(Clear, area);
     let w = area.width as usize;
     let row_h = s.decoration.row_height();
 
@@ -491,11 +494,20 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
 }
 
 fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
-    let status = if s.connected {
-        "Connected"
+    let (status_text, status_style) = if !s.connected {
+        (
+            Cow::Borrowed("Disconnected"),
+            Style::default().fg(crate::theme::STATUS_DISCONNECTED),
+        )
+    } else if s.is_idle {
+        (
+            Cow::Borrowed("Connected (idle)"),
+            Style::default().fg(crate::theme::STATUS_IDLE),
+        )
     } else {
-        "Disconnected"
+        (Cow::Borrowed("Connected"), value_style())
     };
+    let status_span = Span::styled(status_text.clone(), status_style);
     let w = area.width as usize;
 
     // Responsive footer variants, left-aligned
@@ -511,7 +523,8 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
             Span::styled(s.mode.short_label(), header_style()),
             Span::raw("  |  "),
             Span::styled("Status:", header_style()),
-            Span::styled(format!(" {}", status), value_style()),
+            Span::raw(" "),
+            status_span.clone(),
         ])
     } else if w >= 60 {
         Line::from(vec![
@@ -524,14 +537,14 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
             Span::styled(" m ", title_style()),
             Span::styled(s.mode.short_label(), header_style()),
             Span::raw("  |  "),
-            Span::styled(status, value_style()),
+            status_span.clone(),
         ])
     } else if w >= 36 {
         Line::from(vec![
             Span::styled(" q ", title_style()),
             Span::styled(" d ", title_style()),
             Span::styled(" m ", title_style()),
-            Span::styled(status, value_style()),
+            status_span,
         ])
     } else {
         Line::from(vec![Span::styled("qdm", title_style())])
