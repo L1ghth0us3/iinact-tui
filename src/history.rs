@@ -836,14 +836,30 @@ fn build_history_items_from_summaries(
         *totals.entry(summary.base_title.clone()).or_insert(0) += 1;
     }
 
-    let mut occurrences: HashMap<String, u32> = HashMap::new();
+    let mut chronological: HashMap<String, Vec<(u64, Vec<u8>)>> = HashMap::new();
+    for summary in &summaries {
+        chronological
+            .entry(summary.base_title.clone())
+            .or_default()
+            .push((summary.last_seen_ms, summary.key.clone()));
+    }
+
+    let mut occurrence_by_key: HashMap<Vec<u8>, u32> = HashMap::new();
+    for entries in chronological.values_mut() {
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        for (idx, (_, key)) in entries.iter().enumerate() {
+            occurrence_by_key.insert(key.clone(), (idx + 1) as u32);
+        }
+    }
+
     summaries
         .into_iter()
         .map(|summary| {
             let total = totals.get(&summary.base_title).copied().unwrap_or(1);
-            let counter = occurrences.entry(summary.base_title.clone()).or_insert(0);
-            *counter += 1;
-            let occurrence = *counter;
+            let occurrence = occurrence_by_key
+                .get(&summary.key)
+                .copied()
+                .unwrap_or(1);
             let display_title = if total > 1 {
                 format!("{} ({})", summary.base_title.as_str(), occurrence)
             } else {
@@ -1014,5 +1030,21 @@ mod tests {
         assert_eq!(items[1].display_title, "Doma Castle (2)");
         assert_eq!(items[2].display_title, "Striking Dummy");
         assert!(items.iter().all(|item| item.record.is_none()));
+    }
+
+    #[test]
+    fn build_history_items_numbers_respect_chronology() {
+        let mut summaries = vec![
+            make_summary(&[1], "Rubicante", 1_000),
+            make_summary(&[2], "Rubicante", 3_000),
+            make_summary(&[3], "Rubicante", 2_000),
+        ];
+        summaries.sort_by(|a, b| b.last_seen_ms.cmp(&a.last_seen_ms));
+
+        let items = build_history_items_from_summaries(summaries);
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].display_title, "Rubicante (3)");
+        assert_eq!(items[1].display_title, "Rubicante (2)");
+        assert_eq!(items[2].display_title, "Rubicante (1)");
     }
 }
