@@ -41,6 +41,7 @@ The app will connect automatically to `ws://127.0.0.1:10501/ws` and begin render
 - `m` — toggle table mode (DPS ↔ HEAL)
 - `s` — toggle the settings pane
 - `h` — open/close the encounter history panel
+- `i` — when idle mode is active, toggle the idle overlay on/off to peek at the last encounter
 - `↑/↓` — move the selection inside the settings pane
 - `←/→` — adjust the selected setting (idle timeout, default decoration, default mode)
 
@@ -52,6 +53,7 @@ The app will connect automatically to `ws://127.0.0.1:10501/ws` and begin render
 - Background: widgets avoid setting a background color so your terminal theme (blur/transparency) stays visible. The header separator uses a subtle gray; background meters intentionally set a background for the meter fill only.
 - Persisted config: settings are written to `~/.config/iinact-tui/iinact-tui.config` on Linux/macOS (or `%APPDATA%\iinact-tui\iinact-tui.config` on Windows). Set `IINACT_TUI_CONFIG_DIR` to override.
 - History panel: press `h` to switch into the history view; use `↑/↓` or mouse scroll to pick a date, hit `Enter`/click to drill into the encounters list, press `Enter` again for per-encounter details, and `←`/`Backspace` to step back. Date and encounter lists load from lightweight indexes first, with overlay indicators while data hydrates; encounter detail fetches the full frame-by-frame record on demand.
+- Idle overlay: when the app is idle you’ll see the idle window by default—press `i` to hide/show it without leaving idle mode so you can review the most recent encounter quickly.
 
 ## Troubleshooting
 - No data? Confirm IINACT is running and the endpoint is reachable. The default is `ws://127.0.0.1:10501/ws`.

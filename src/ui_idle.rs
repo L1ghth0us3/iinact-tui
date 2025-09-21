@@ -46,7 +46,15 @@ fn render_header(f: &mut Frame, area: Rect, snapshot: &AppSnapshot) {
     )]);
 
     let block = Block::default().borders(Borders::NONE);
-    let widget = Paragraph::new(vec![title, description])
+    let mut lines = vec![title, description];
+    if snapshot.idle_scene == IdleScene::Status {
+        lines.push(Line::from(vec![Span::styled(
+            "press 'i' to toggle idle window",
+            Style::default().fg(TEXT).add_modifier(Modifier::DIM),
+        )]));
+    }
+
+    let widget = Paragraph::new(lines)
         .block(block)
         .alignment(Alignment::Center);
 

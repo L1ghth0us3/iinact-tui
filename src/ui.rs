@@ -28,7 +28,7 @@ pub fn draw(f: &mut Frame, s: &AppSnapshot) {
         .split(f.size());
 
     draw_header(f, chunks[0], s);
-    if s.is_idle {
+    if s.is_idle && s.show_idle_overlay {
         ui_idle::draw_idle(f, chunks[1], s);
     } else {
         draw_table(f, chunks[1], s);

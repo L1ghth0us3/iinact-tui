@@ -9,6 +9,7 @@ The format is inspired by Keep a Changelog and uses calendar dates (YYYY‑MM‑
 - In‑TUI URL editor to switch WS endpoints.
 - Reworked history persistence to store per-date and per-encounter summaries for fast indexed loading while preserving every CombatData frame.
 - History panel now hydrates data lazily with loading indicators for dates, encounters, and detail views.
+- Added `i` hotkey (idle-only) to toggle the idle overlay so you can peek at the most recent encounter without leaving idle mode.
 
 ## [0.2.0] - 2025-09-21
 

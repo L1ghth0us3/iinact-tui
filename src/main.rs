@@ -138,6 +138,15 @@ async fn main() -> Result<()> {
                             });
                         }
                     }
+                    KeyCode::Char('i') => {
+                        let mut s = state.write().await;
+                        if !s.history.visible {
+                            let now = Instant::now();
+                            if s.is_idle_at(now) {
+                                s.show_idle_overlay = !s.show_idle_overlay;
+                            }
+                        }
+                    }
                     _ => {
                         let mut pending_task = None;
                         let history_active = {

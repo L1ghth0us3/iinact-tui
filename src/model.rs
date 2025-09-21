@@ -92,6 +92,7 @@ pub struct AppSnapshot {
     pub show_settings: bool,
     pub settings_cursor: SettingsField,
     pub history: HistoryPanel,
+    pub show_idle_overlay: bool,
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -126,7 +127,7 @@ impl IdleScene {
     }
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 pub struct AppState {
     pub connected: bool,
     pub last_update: Option<Instant>,
@@ -141,6 +142,28 @@ pub struct AppState {
     pub show_settings: bool,
     pub settings_cursor: SettingsField,
     pub history: HistoryPanel,
+    pub show_idle_overlay: bool,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        Self {
+            connected: false,
+            last_update: None,
+            last_active: None,
+            connected_since: None,
+            encounter: None,
+            rows: Vec::new(),
+            decoration: Decoration::default(),
+            mode: ViewMode::default(),
+            idle_scene: IdleScene::default(),
+            settings: AppSettings::default(),
+            show_settings: false,
+            settings_cursor: SettingsField::default(),
+            history: HistoryPanel::default(),
+            show_idle_overlay: true,
+        }
+    }
 }
 
 impl AppState {
@@ -266,18 +289,19 @@ impl AppState {
             rows: self.rows.clone(),
             decoration: self.decoration,
             mode: self.mode,
-            is_idle: self.is_idle(now),
+            is_idle: self.is_idle_at(now),
             idle_scene: self.idle_scene,
             settings: self.settings.clone(),
             show_settings: self.show_settings,
             settings_cursor: self.settings_cursor,
             history: self.history.clone(),
+            show_idle_overlay: self.show_idle_overlay,
         }
     }
 }
 
 impl AppState {
-    fn is_idle(&self, now: Instant) -> bool {
+    pub fn is_idle_at(&self, now: Instant) -> bool {
         if !self.connected {
             return false;
         }
