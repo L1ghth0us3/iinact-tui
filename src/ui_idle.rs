@@ -102,15 +102,6 @@ fn status_lines(snapshot: &AppSnapshot) -> Vec<Line<'static>> {
         "Disconnected"
     };
 
-    let last_update = if snapshot.last_update_ms == 0 {
-        "no combat data yet".to_string()
-    } else {
-        format!(
-            "last combat packet {} ago",
-            format_elapsed(snapshot.last_update_ms)
-        )
-    };
-
     let encounter_label = snapshot
         .encounter
         .as_ref()
@@ -126,7 +117,6 @@ fn status_lines(snapshot: &AppSnapshot) -> Vec<Line<'static>> {
 
     vec![
         Line::from(vec![Span::styled(connection, value_style())]),
-        Line::from(vec![Span::styled(last_update, header_style())]),
         Line::from(vec![Span::styled(encounter_label, value_style())]),
         Line::from(vec![Span::styled(
             "Press 'm' to resume the meter.",
@@ -144,13 +134,4 @@ fn placeholder(title: &str, caption: &str) -> Vec<Line<'static>> {
             Style::default().fg(TEXT).add_modifier(Modifier::DIM),
         )]),
     ]
-}
-
-fn format_elapsed(ms: u128) -> String {
-    let seconds = ms as f64 / 1000.0;
-    if seconds >= 60.0 {
-        format!("{:.1}m", seconds / 60.0)
-    } else {
-        format!("{:.1}s", seconds)
-    }
 }

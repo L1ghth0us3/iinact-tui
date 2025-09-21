@@ -1,11 +1,13 @@
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{
+    Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table,
+};
 use ratatui::Frame;
 
 use crate::model::{AppSnapshot, HistoryPanelLevel};
-use crate::theme::TEXT;
+use crate::theme::{header_style, job_color, title_style, value_style, TEXT};
 
 pub fn draw_history(f: &mut Frame, s: &AppSnapshot) {
     let area = f.size();
@@ -29,7 +31,10 @@ fn draw_header(f: &mut Frame, area: Rect, s: &AppSnapshot) {
     } else {
         match s.history.level {
             HistoryPanelLevel::Dates => "Enter/Click ▸ view encounters · ↑/↓ scroll · q/Esc quits",
-            HistoryPanelLevel::Encounters => "← go back · ↑/↓ scroll · Enter selects",
+            HistoryPanelLevel::Encounters => "← dates · ↑/↓ scroll · Enter view details",
+            HistoryPanelLevel::EncounterDetail => {
+                "← encounters · ↑/↓ switch encounter · h/Esc closes"
+            }
         }
     };
 
@@ -67,6 +72,7 @@ fn draw_body(f: &mut Frame, area: Rect, s: &AppSnapshot) {
     match s.history.level {
         HistoryPanelLevel::Dates => draw_dates(f, area, s),
         HistoryPanelLevel::Encounters => draw_encounters(f, area, s),
+        HistoryPanelLevel::EncounterDetail => draw_encounter_detail(f, area, s),
     }
 }
 
@@ -141,4 +147,135 @@ fn draw_encounters(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         );
 
     f.render_stateful_widget(list, area, &mut state);
+}
+
+fn draw_encounter_detail(f: &mut Frame, area: Rect, s: &AppSnapshot) {
+    let Some(day) = s.history.current_day() else {
+        let block = Paragraph::new("No date selected.")
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::ALL));
+        f.render_widget(block, area);
+        return;
+    };
+
+    let Some(encounter) = day.encounters.get(s.history.selected_encounter) else {
+        let block = Paragraph::new("No encounter selected.")
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::ALL));
+        f.render_widget(block, area);
+        return;
+    };
+
+    let record = &encounter.record;
+
+    let metrics = vec![
+        (
+            "Encounter",
+            if record.encounter.title.is_empty() {
+                encounter.display_title.clone()
+            } else {
+                record.encounter.title.clone()
+            },
+        ),
+        (
+            "Zone",
+            if record.encounter.zone.is_empty() {
+                "Unknown".to_string()
+            } else {
+                record.encounter.zone.clone()
+            },
+        ),
+        ("Duration", record.encounter.duration.clone()),
+        ("ENCDPS", record.encounter.encdps.clone()),
+        ("Damage", record.encounter.damage.clone()),
+        ("Snapshots", record.snapshots.to_string()),
+        ("Last seen", encounter.timestamp_label.clone()),
+    ];
+
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(7),
+            Constraint::Min(4),
+            Constraint::Length(1),
+        ])
+        .split(area);
+
+    let summary_lines: Vec<Line> = metrics
+        .into_iter()
+        .map(|(label, value)| {
+            Line::from(vec![
+                Span::styled(format!("{label}: "), header_style()),
+                Span::styled(value, value_style()),
+            ])
+        })
+        .collect();
+
+    let summary = Paragraph::new(summary_lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(Line::from(vec![Span::styled(
+                    format!("Details · {}", encounter.display_title),
+                    title_style(),
+                )])),
+        )
+        .alignment(Alignment::Left);
+    f.render_widget(summary, layout[0]);
+
+    if record.rows.is_empty() {
+        let block = Paragraph::new("No combatants recorded.")
+            .alignment(Alignment::Center)
+            .block(Block::default().borders(Borders::ALL));
+        f.render_widget(block, layout[1]);
+    } else {
+        let widths = [
+            Constraint::Length(18),
+            Constraint::Length(6),
+            Constraint::Length(8),
+            Constraint::Length(8),
+            Constraint::Length(10),
+            Constraint::Length(6),
+            Constraint::Length(6),
+            Constraint::Length(6),
+        ];
+
+        let header = Row::new(vec![
+            Cell::from("Name"),
+            Cell::from("Job"),
+            Cell::from("ENCDPS"),
+            Cell::from("Share"),
+            Cell::from("Damage"),
+            Cell::from("Crit%"),
+            Cell::from("DH%"),
+            Cell::from("Deaths"),
+        ])
+        .style(header_style());
+
+        let rows = record.rows.iter().map(|row| {
+            Row::new(vec![
+                Cell::from(row.name.clone()).style(Style::default().fg(job_color(&row.job))),
+                Cell::from(row.job.clone()),
+                Cell::from(row.encdps_str.clone()),
+                Cell::from(row.share_str.clone()),
+                Cell::from(row.damage_str.clone()),
+                Cell::from(row.crit.clone()),
+                Cell::from(row.dh.clone()),
+                Cell::from(row.deaths.clone()),
+            ])
+        });
+
+        let table = Table::new(rows, widths)
+            .header(header)
+            .block(Block::default().borders(Borders::ALL).title("Combatants"))
+            .column_spacing(1)
+            .highlight_style(Style::default());
+
+        f.render_widget(table, layout[1]);
+    }
+
+    let hint = Paragraph::new("← back · ↑/↓ switch encounter · Enter re-open")
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::NONE));
+    f.render_widget(hint, layout[2]);
 }

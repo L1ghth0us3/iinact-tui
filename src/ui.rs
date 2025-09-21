@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table};
 use ratatui::Frame;
@@ -479,6 +479,11 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
     let status_span = Span::styled(status_text.clone(), status_style);
     let decor_label = s.decoration.short_label().trim_start_matches("decor:");
     let mode_label = s.mode.short_label().trim_start_matches("mode:");
+    let history_style = if s.history.visible {
+        header_style().add_modifier(Modifier::BOLD)
+    } else {
+        header_style()
+    };
     let w = area.width as usize;
 
     // Responsive footer variants, left-aligned
@@ -487,14 +492,17 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
             Span::styled(" q ", title_style()),
             Span::styled("quit", header_style()),
             Span::raw(" | "),
-            Span::styled(" d ", title_style()),
-            Span::styled(decor_label, header_style()),
-            Span::raw(" | "),
             Span::styled(" m ", title_style()),
             Span::styled(mode_label, header_style()),
             Span::raw(" | "),
             Span::styled(" s ", title_style()),
             Span::styled("settings", header_style()),
+            Span::raw(" | "),
+            Span::styled(" h ", title_style()),
+            Span::styled("history", history_style),
+            Span::raw(" | "),
+            Span::styled(" d ", title_style()),
+            Span::styled(decor_label, header_style()),
             Span::raw(" | "),
             Span::styled("status", header_style()),
             Span::raw(" "),
@@ -505,27 +513,31 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
             Span::styled(" q ", title_style()),
             Span::styled("quit", header_style()),
             Span::raw(" | "),
-            Span::styled(" d ", title_style()),
-            Span::styled(decor_label, header_style()),
-            Span::raw(" | "),
             Span::styled(" m ", title_style()),
             Span::styled(mode_label, header_style()),
             Span::raw(" | "),
             Span::styled(" s ", title_style()),
             Span::styled("settings", header_style()),
             Span::raw(" | "),
+            Span::styled(" h ", title_style()),
+            Span::styled("history", history_style),
+            Span::raw(" | "),
+            Span::styled(" d ", title_style()),
+            Span::styled(decor_label, header_style()),
+            Span::raw(" | "),
             status_span.clone(),
         ])
     } else if w >= 36 {
         Line::from(vec![
             Span::styled(" q ", title_style()),
-            Span::styled(" d ", title_style()),
             Span::styled(" m ", title_style()),
             Span::styled(" s ", title_style()),
+            Span::styled(" h ", title_style()),
+            Span::styled(" d ", title_style()),
             status_span,
         ])
     } else {
-        Line::from(vec![Span::styled("qdms", title_style())])
+        Line::from(vec![Span::styled("qmshd", title_style())])
     };
 
     let widget = Paragraph::new(line)

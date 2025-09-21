@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::config::AppConfig;
-use crate::history::HistoryDay;
+use crate::history::{HistoryDay, HistoryEncounterItem};
 
 pub const WS_URL_DEFAULT: &str = "ws://127.0.0.1:10501/ws";
 
@@ -13,6 +13,7 @@ pub enum HistoryPanelLevel {
     #[default]
     Dates,
     Encounters,
+    EncounterDetail,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -51,6 +52,11 @@ impl HistoryPanel {
 
     pub fn current_day(&self) -> Option<&HistoryDay> {
         self.days.get(self.selected_day)
+    }
+
+    pub fn current_encounter(&self) -> Option<&HistoryEncounterItem> {
+        self.current_day()
+            .and_then(|day| day.encounters.get(self.selected_encounter))
     }
 }
 
@@ -175,6 +181,20 @@ impl AppState {
                         .unwrap_or(true)
                 {
                     self.history.level = HistoryPanelLevel::Dates;
+                }
+                if self.history.level == HistoryPanelLevel::EncounterDetail
+                    && self.history.current_encounter().is_none()
+                {
+                    self.history.level = if self
+                        .history
+                        .current_day()
+                        .map(|day| day.encounters.is_empty())
+                        .unwrap_or(true)
+                    {
+                        HistoryPanelLevel::Dates
+                    } else {
+                        HistoryPanelLevel::Encounters
+                    };
                 }
             }
             AppEvent::HistoryError { message } => {
@@ -362,7 +382,7 @@ impl AppState {
                     }
                 }
             }
-            HistoryPanelLevel::Encounters => {
+            HistoryPanelLevel::Encounters | HistoryPanelLevel::EncounterDetail => {
                 if let Some(day) = self.history.current_day() {
                     if day.encounters.is_empty() {
                         return;
@@ -385,13 +405,21 @@ impl AppState {
         if !self.history.visible || self.history.loading {
             return;
         }
-        if self.history.level == HistoryPanelLevel::Dates {
-            if let Some(day) = self.history.current_day() {
-                if !day.encounters.is_empty() {
-                    self.history.level = HistoryPanelLevel::Encounters;
-                    self.history.selected_encounter = 0;
+        match self.history.level {
+            HistoryPanelLevel::Dates => {
+                if let Some(day) = self.history.current_day() {
+                    if !day.encounters.is_empty() {
+                        self.history.level = HistoryPanelLevel::Encounters;
+                        self.history.selected_encounter = 0;
+                    }
                 }
             }
+            HistoryPanelLevel::Encounters => {
+                if self.history.current_encounter().is_some() {
+                    self.history.level = HistoryPanelLevel::EncounterDetail;
+                }
+            }
+            HistoryPanelLevel::EncounterDetail => {}
         }
     }
 
@@ -399,9 +427,15 @@ impl AppState {
         if !self.history.visible {
             return;
         }
-        if self.history.level == HistoryPanelLevel::Encounters {
-            self.history.level = HistoryPanelLevel::Dates;
-            self.history.selected_encounter = 0;
+        match self.history.level {
+            HistoryPanelLevel::EncounterDetail => {
+                self.history.level = HistoryPanelLevel::Encounters;
+            }
+            HistoryPanelLevel::Encounters => {
+                self.history.level = HistoryPanelLevel::Dates;
+                self.history.selected_encounter = 0;
+            }
+            HistoryPanelLevel::Dates => {}
         }
     }
 }

@@ -247,9 +247,11 @@ async fn handle_history_mouse(mouse: MouseEvent, state: &Arc<RwLock<AppState>>) 
                         if !day.encounters.is_empty() {
                             let max_index = day.encounters.len().saturating_sub(1);
                             s.history.selected_encounter = index.min(max_index);
+                            s.history_enter();
                         }
                     }
                 }
+                HistoryPanelLevel::EncounterDetail => {}
             }
         }
         _ => {}

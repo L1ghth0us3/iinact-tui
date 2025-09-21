@@ -120,6 +120,8 @@ pub struct HistoryEncounterItem {
     pub occurrence: u32,
     pub time_label: String,
     pub last_seen_ms: u64,
+    pub timestamp_label: String,
+    pub record: EncounterRecord,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -545,12 +547,15 @@ fn group_by_day(records: Vec<StoredEncounter>) -> Vec<HistoryDay> {
 
         let base_title = resolve_title(&stored.record);
         let time_label = dt.format("%H:%M").to_string();
+        let timestamp_label = dt.format("%Y-%m-%d %H:%M:%S").to_string();
 
         bucket.entries.push(DayEncounter {
             key: stored.key,
             base_title,
             time_label,
             last_seen_ms: stored.record.last_seen_ms,
+            timestamp_label,
+            record: stored.record,
         });
     }
 
@@ -612,18 +617,21 @@ impl DayBucket {
                 let counter = occurrences.entry(entry.base_title.clone()).or_insert(0);
                 *counter += 1;
                 let occurrence = *counter;
+                let base_title = entry.base_title;
                 let display_title = if total > 1 {
-                    format!("{} ({})", entry.base_title, occurrence)
+                    format!("{} ({})", base_title.as_str(), occurrence)
                 } else {
-                    entry.base_title.clone()
+                    base_title.clone()
                 };
                 HistoryEncounterItem {
                     key: entry.key.as_bytes(),
                     display_title,
-                    base_title: entry.base_title,
+                    base_title,
                     occurrence,
                     time_label: entry.time_label,
                     last_seen_ms: entry.last_seen_ms,
+                    timestamp_label: entry.timestamp_label,
+                    record: entry.record,
                 }
             })
             .collect::<Vec<_>>();
@@ -642,6 +650,8 @@ struct DayEncounter {
     base_title: String,
     time_label: String,
     last_seen_ms: u64,
+    timestamp_label: String,
+    record: EncounterRecord,
 }
 
 #[cfg(test)]
