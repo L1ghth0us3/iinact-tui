@@ -39,6 +39,7 @@ The app will connect automatically to `ws://127.0.0.1:10501/ws` and begin render
 - `d` — cycle decorations (underline → background → none)
 - `m` — toggle table mode (DPS ↔ HEAL)
 - `s` — toggle the settings pane
+- `h` — open/close the encounter history panel
 - `↑/↓` — move the selection inside the settings pane
 - `←/→` — adjust the selected setting (idle timeout, default decoration, default mode)
 
@@ -49,6 +50,7 @@ The app will connect automatically to `ws://127.0.0.1:10501/ws` and begin render
 - Encounter naming: while a fight is active some servers report generic names (e.g., "Encounter"); the header falls back to Zone until a final name is available.
 - Background: widgets avoid setting a background color so your terminal theme (blur/transparency) stays visible. The header separator uses a subtle gray; background meters intentionally set a background for the meter fill only.
 - Persisted config: settings are written to `~/.config/iinact-tui/iinact-tui.config` on Linux/macOS (or `%APPDATA%\iinact-tui\iinact-tui.config` on Windows). Set `IINACT_TUI_CONFIG_DIR` to override.
+- History panel: press `h` to switch into the history view; use `↑/↓` or mouse scroll to pick a date, hit `Enter`/click to drill into encounters, and `←`/`Backspace` to return to the date list.
 
 ## Troubleshooting
 - No data? Confirm IINACT is running and the endpoint is reachable. The default is `ws://127.0.0.1:10501/ws`.

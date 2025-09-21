@@ -103,3 +103,4 @@ python3 query_iinact.py --show-logline
 - `spawn_recorder` starts a background task fed by `RecorderHandle`; push snapshots with `record_components(encounter, rows, raw_json)` and call `flush()` when tearing down connections.
 - Records capture first/last seen timestamps, the final encounter summary, combatant rows, and the last raw JSON payload. Empty passive snapshots are skipped to avoid noise.
 - The interface exposes helpers (`remove`, `tree`, `HistoryKey::prefix`) to make adding/removing sled namespaces straightforward for future features.
+- TUI access: hit `h` to enter the history panel. The first view lists dates; `↑/↓` or mouse scroll move the selection, and `Enter`/left-click drill into the encounter list. Use `←`/`Backspace` to go back or `h`/`Esc` to exit.
