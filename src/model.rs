@@ -270,14 +270,6 @@ impl Decoration {
             Decoration::None => "decor:none",
         }
     }
-
-    pub fn wide_label(self) -> &'static str {
-        match self {
-            Decoration::Underline => "Decor: underline",
-            Decoration::Background => "Decor: background",
-            Decoration::None => "Decor: none",
-        }
-    }
 }
 
 // High-level view mode of the table

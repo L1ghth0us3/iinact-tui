@@ -512,6 +512,8 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         (Cow::Borrowed("Connected"), value_style())
     };
     let status_span = Span::styled(status_text.clone(), status_style);
+    let decor_label = s.decoration.short_label().trim_start_matches("decor:");
+    let mode_label = s.mode.short_label().trim_start_matches("mode:");
     let w = area.width as usize;
 
     // Responsive footer variants, left-aligned
@@ -519,14 +521,17 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         Line::from(vec![
             Span::styled(" q ", title_style()),
             Span::styled("quit", header_style()),
-            Span::raw("  |  "),
+            Span::raw(" | "),
             Span::styled(" d ", title_style()),
-            Span::styled(s.decoration.wide_label(), header_style()),
-            Span::raw("  |  "),
+            Span::styled(decor_label, header_style()),
+            Span::raw(" | "),
             Span::styled(" m ", title_style()),
-            Span::styled(s.mode.short_label(), header_style()),
-            Span::raw("  |  "),
-            Span::styled("Status:", header_style()),
+            Span::styled(mode_label, header_style()),
+            Span::raw(" | "),
+            Span::styled(" s ", title_style()),
+            Span::styled("settings", header_style()),
+            Span::raw(" | "),
+            Span::styled("status", header_style()),
             Span::raw(" "),
             status_span.clone(),
         ])
@@ -534,13 +539,16 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         Line::from(vec![
             Span::styled(" q ", title_style()),
             Span::styled("quit", header_style()),
-            Span::raw("  |  "),
+            Span::raw(" | "),
             Span::styled(" d ", title_style()),
-            Span::styled(s.decoration.short_label(), header_style()),
-            Span::raw("  |  "),
+            Span::styled(decor_label, header_style()),
+            Span::raw(" | "),
             Span::styled(" m ", title_style()),
-            Span::styled(s.mode.short_label(), header_style()),
-            Span::raw("  |  "),
+            Span::styled(mode_label, header_style()),
+            Span::raw(" | "),
+            Span::styled(" s ", title_style()),
+            Span::styled("settings", header_style()),
+            Span::raw(" | "),
             status_span.clone(),
         ])
     } else if w >= 36 {
@@ -548,10 +556,11 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
             Span::styled(" q ", title_style()),
             Span::styled(" d ", title_style()),
             Span::styled(" m ", title_style()),
+            Span::styled(" s ", title_style()),
             status_span,
         ])
     } else {
-        Line::from(vec![Span::styled("qdm", title_style())])
+        Line::from(vec![Span::styled("qdms", title_style())])
     };
 
     let widget = Paragraph::new(line)
