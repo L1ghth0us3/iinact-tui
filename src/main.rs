@@ -25,9 +25,15 @@ mod ui_history;
 mod ui_idle;
 mod ws_client;
 
+use history::HistoryStore;
 use model::{AppEvent, AppSettings, AppState, HistoryPanelLevel, SettingsField, WS_URL_DEFAULT};
 
 const HISTORY_LIST_OFFSET: u16 = 4;
+
+enum HistoryTask {
+    LoadEncounters { date_id: String },
+    LoadEncounterDetail { key: Vec<u8> },
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -114,9 +120,9 @@ async fn main() -> Result<()> {
                             let store = history_store.clone();
                             let tx = event_tx.clone();
                             tokio::spawn(async move {
-                                match task::spawn_blocking(move || store.load_days()).await {
+                                match task::spawn_blocking(move || store.load_dates()).await {
                                     Ok(Ok(days)) => {
-                                        let _ = tx.send(AppEvent::HistoryLoaded { days });
+                                        let _ = tx.send(AppEvent::HistoryDatesLoaded { days });
                                     }
                                     Ok(Err(err)) => {
                                         let _ = tx.send(AppEvent::HistoryError {
@@ -133,6 +139,7 @@ async fn main() -> Result<()> {
                         }
                     }
                     _ => {
+                        let mut pending_task = None;
                         let history_active = {
                             let mut s = state.write().await;
                             if s.history.visible {
@@ -145,11 +152,17 @@ async fn main() -> Result<()> {
                                     KeyCode::Right | KeyCode::Enter => s.history_enter(),
                                     _ => {}
                                 }
+                                pending_task = determine_history_task(&mut s);
                                 true
                             } else {
                                 false
                             }
                         };
+
+                        if let Some(task) = pending_task {
+                            spawn_history_task(task, history_store.clone(), event_tx.clone());
+                        }
+
                         if history_active {
                             continue;
                         }
@@ -205,6 +218,12 @@ async fn main() -> Result<()> {
                 },
                 Event::Mouse(mouse) => {
                     handle_history_mouse(mouse, &state).await;
+                    let mut s = state.write().await;
+                    if s.history.visible {
+                        if let Some(task) = determine_history_task(&mut s) {
+                            spawn_history_task(task, history_store.clone(), event_tx.clone());
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -255,5 +274,108 @@ async fn handle_history_mouse(mouse: MouseEvent, state: &Arc<RwLock<AppState>>) 
             }
         }
         _ => {}
+    }
+}
+
+fn determine_history_task(state: &mut AppState) -> Option<HistoryTask> {
+    if state.history.loading {
+        return None;
+    }
+
+    match state.history.level {
+        HistoryPanelLevel::Encounters => {
+            let need_load = state
+                .history
+                .current_day()
+                .filter(|day| !day.encounters_loaded)
+                .and_then(|day| {
+                    if day.encounter_ids.is_empty() {
+                        None
+                    } else {
+                        Some(day.iso_date.clone())
+                    }
+                });
+            if let Some(date_id) = need_load {
+                state.history_set_loading();
+                return Some(HistoryTask::LoadEncounters { date_id });
+            }
+        }
+        HistoryPanelLevel::EncounterDetail => {
+            let need_load = state
+                .history
+                .current_encounter()
+                .filter(|enc| enc.record.is_none())
+                .map(|enc| enc.key.clone());
+            if let Some(key) = need_load {
+                state.history_set_loading();
+                return Some(HistoryTask::LoadEncounterDetail { key });
+            }
+        }
+        HistoryPanelLevel::Dates => {}
+    }
+
+    None
+}
+
+fn spawn_history_task(
+    task: HistoryTask,
+    store: Arc<HistoryStore>,
+    tx: mpsc::UnboundedSender<AppEvent>,
+) {
+    match task {
+        HistoryTask::LoadEncounters { date_id } => {
+            let tx_enc = tx.clone();
+            let store_clone = store.clone();
+            tokio::spawn(async move {
+                let date_for_block = date_id.clone();
+                let result = task::spawn_blocking(move || {
+                    store_clone.load_encounter_summaries(&date_for_block)
+                })
+                .await;
+                match result {
+                    Ok(Ok(encounters)) => {
+                        let _ = tx_enc.send(AppEvent::HistoryEncountersLoaded {
+                            date_id,
+                            encounters,
+                        });
+                    }
+                    Ok(Err(err)) => {
+                        let _ = tx_enc.send(AppEvent::HistoryError {
+                            message: err.to_string(),
+                        });
+                    }
+                    Err(err) => {
+                        let _ = tx_enc.send(AppEvent::HistoryError {
+                            message: format!("History load failed: {err}"),
+                        });
+                    }
+                }
+            });
+        }
+        HistoryTask::LoadEncounterDetail { key } => {
+            let tx_detail = tx.clone();
+            let store_clone = store.clone();
+            tokio::spawn(async move {
+                let key_for_block = key.clone();
+                let result =
+                    task::spawn_blocking(move || store_clone.load_encounter_record(&key_for_block))
+                        .await;
+                match result {
+                    Ok(Ok(record)) => {
+                        let _ = tx_detail.send(AppEvent::HistoryEncounterLoaded { key, record });
+                    }
+                    Ok(Err(err)) => {
+                        let _ = tx_detail.send(AppEvent::HistoryError {
+                            message: err.to_string(),
+                        });
+                    }
+                    Err(err) => {
+                        let _ = tx_detail.send(AppEvent::HistoryError {
+                            message: format!("History load failed: {err}"),
+                        });
+                    }
+                }
+            });
+        }
     }
 }

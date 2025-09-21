@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::config::AppConfig;
-use crate::history::{HistoryDay, HistoryEncounterItem};
+use crate::history::{EncounterRecord, HistoryDay, HistoryEncounterItem};
 
 pub const WS_URL_DEFAULT: &str = "ws://127.0.0.1:10501/ws";
 
@@ -48,6 +48,10 @@ impl HistoryPanel {
         self.selected_day = 0;
         self.selected_encounter = 0;
         self.error = None;
+        for day in &mut self.days {
+            day.encounters.clear();
+            day.encounters_loaded = false;
+        }
     }
 
     pub fn current_day(&self) -> Option<&HistoryDay> {
@@ -57,6 +61,19 @@ impl HistoryPanel {
     pub fn current_encounter(&self) -> Option<&HistoryEncounterItem> {
         self.current_day()
             .and_then(|day| day.encounters.get(self.selected_encounter))
+    }
+
+    pub fn find_day_mut(&mut self, date_id: &str) -> Option<&mut HistoryDay> {
+        self.days.iter_mut().find(|day| day.iso_date == date_id)
+    }
+
+    pub fn find_encounter_mut(&mut self, key: &[u8]) -> Option<&mut HistoryEncounterItem> {
+        for day in &mut self.days {
+            if let Some(item) = day.encounters.iter_mut().find(|item| item.key == key) {
+                return Some(item);
+            }
+        }
+        None
     }
 }
 
@@ -157,7 +174,7 @@ impl AppState {
                     self.last_active = Some(now);
                 }
             }
-            AppEvent::HistoryLoaded { days } => {
+            AppEvent::HistoryDatesLoaded { days } => {
                 self.history.loading = false;
                 self.history.error = None;
                 self.history.days = days;
@@ -196,6 +213,38 @@ impl AppState {
                         HistoryPanelLevel::Encounters
                     };
                 }
+            }
+            AppEvent::HistoryEncountersLoaded {
+                date_id,
+                encounters,
+            } => {
+                let selected_matches = self
+                    .history
+                    .days
+                    .get(self.history.selected_day)
+                    .map(|d| d.iso_date == date_id)
+                    .unwrap_or(false);
+
+                let new_len = encounters.len();
+                if let Some(day) = self.history.find_day_mut(&date_id) {
+                    day.encounters = encounters;
+                    day.encounters_loaded = true;
+                    day.encounter_count = new_len;
+                }
+                self.history.loading = false;
+
+                if selected_matches
+                    && self.history.level == HistoryPanelLevel::Encounters
+                    && self.history.selected_encounter >= new_len
+                {
+                    self.history.selected_encounter = new_len.saturating_sub(1);
+                }
+            }
+            AppEvent::HistoryEncounterLoaded { key, record } => {
+                if let Some(item) = self.history.find_encounter_mut(&key) {
+                    item.record = Some(record);
+                }
+                self.history.loading = false;
             }
             AppEvent::HistoryError { message } => {
                 self.history.loading = false;
@@ -408,7 +457,12 @@ impl AppState {
         match self.history.level {
             HistoryPanelLevel::Dates => {
                 if let Some(day) = self.history.current_day() {
-                    if !day.encounters.is_empty() {
+                    if day.encounters_loaded {
+                        if !day.encounters.is_empty() {
+                            self.history.level = HistoryPanelLevel::Encounters;
+                            self.history.selected_encounter = 0;
+                        }
+                    } else if !day.encounter_ids.is_empty() {
                         self.history.level = HistoryPanelLevel::Encounters;
                         self.history.selected_encounter = 0;
                     }
@@ -482,8 +536,16 @@ pub enum AppEvent {
         encounter: EncounterSummary,
         rows: Vec<CombatantRow>,
     },
-    HistoryLoaded {
+    HistoryDatesLoaded {
         days: Vec<HistoryDay>,
+    },
+    HistoryEncountersLoaded {
+        date_id: String,
+        encounters: Vec<HistoryEncounterItem>,
+    },
+    HistoryEncounterLoaded {
+        key: Vec<u8>,
+        record: EncounterRecord,
     },
     HistoryError {
         message: String,

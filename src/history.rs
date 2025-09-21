@@ -1,11 +1,11 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Local, TimeZone};
+use chrono::{DateTime, Local, NaiveDate, TimeZone};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::{mpsc, oneshot, Mutex};
@@ -60,6 +60,7 @@ impl HistoryKey {
         encode_key(&self.namespace, self.timestamp_ms, self.discriminator)
     }
 
+    #[allow(dead_code)]
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
         decode_key(bytes)
     }
@@ -149,12 +150,6 @@ impl EncounterFrame {
     }
 }
 
-#[derive(Debug, Clone)]
-struct StoredEncounter {
-    key: HistoryKey,
-    record: EncounterRecord,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HistoryEncounterItem {
     pub key: Vec<u8>,
@@ -164,7 +159,8 @@ pub struct HistoryEncounterItem {
     pub time_label: String,
     pub last_seen_ms: u64,
     pub timestamp_label: String,
-    pub record: EncounterRecord,
+    #[serde(default)]
+    pub record: Option<EncounterRecord>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -174,11 +170,41 @@ pub struct HistoryDay {
     pub encounter_count: usize,
     #[serde(default)]
     pub encounters: Vec<HistoryEncounterItem>,
+    #[serde(default)]
+    pub encounter_ids: Vec<Vec<u8>>,
+    #[serde(default)]
+    pub encounters_loaded: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncounterSummaryRecord {
+    pub key: Vec<u8>,
+    pub date_id: String,
+    pub base_title: String,
+    pub encounter_title: String,
+    pub time_label: String,
+    pub timestamp_label: String,
+    pub last_seen_ms: u64,
+    pub duration: String,
+    pub encdps: String,
+    pub damage: String,
+    pub zone: String,
+    pub snapshots: u32,
+    pub frames: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DateSummaryRecord {
+    pub date_id: String,
+    pub last_seen_ms: u64,
+    pub encounter_ids: Vec<Vec<u8>>,
 }
 
 /// Thin wrapper around the sled database.
 pub struct HistoryStore {
     encounters: sled::Tree,
+    encounter_summaries: sled::Tree,
+    date_index: sled::Tree,
     meta: sled::Tree,
     db: sled::Db,
     root: PathBuf,
@@ -186,6 +212,8 @@ pub struct HistoryStore {
 
 impl HistoryStore {
     pub const ENCOUNTERS_TREE: &'static str = "encounters";
+    pub const ENCOUNTER_SUMMARIES_TREE: &'static str = "enc_summaries";
+    pub const DATES_TREE: &'static str = "dates";
     pub const META_TREE: &'static str = "meta";
 
     pub fn open(path: &Path) -> Result<Self> {
@@ -194,11 +222,19 @@ impl HistoryStore {
         let encounters = db
             .open_tree(Self::ENCOUNTERS_TREE)
             .context("Unable to open encounters history tree")?;
+        let encounter_summaries = db
+            .open_tree(Self::ENCOUNTER_SUMMARIES_TREE)
+            .context("Unable to open encounter summaries history tree")?;
+        let date_index = db
+            .open_tree(Self::DATES_TREE)
+            .context("Unable to open history date index tree")?;
         let meta = db
             .open_tree(Self::META_TREE)
             .context("Unable to open history metadata tree")?;
         let store = Self {
             encounters,
+            encounter_summaries,
+            date_index,
             meta,
             db,
             root: path.to_path_buf(),
@@ -224,10 +260,21 @@ impl HistoryStore {
             .generate_id()
             .context("Failed to generate sled identifier for encounter key")?;
         let key = HistoryKey::new(ENCOUNTER_NAMESPACE, timestamp, discriminator);
+        let key_bytes = key.as_bytes();
         let bytes = serde_cbor::to_vec(record).context("Failed to serialize encounter record")?;
         self.encounters
-            .insert(key.as_bytes(), bytes)
+            .insert(key_bytes.as_slice(), bytes)
             .context("Failed to persist encounter record")?;
+
+        let summary = self.build_encounter_summary(&key_bytes, record);
+        let summary_bytes =
+            serde_cbor::to_vec(&summary).context("Failed to serialize encounter summary")?;
+        self.encounter_summaries
+            .insert(key_bytes.as_slice(), summary_bytes)
+            .context("Failed to persist encounter summary")?;
+
+        self.update_date_summary(&summary)
+            .context("Failed to update date summary")?;
         Ok(key)
     }
 
@@ -246,24 +293,142 @@ impl HistoryStore {
             .with_context(|| format!("Unable to open history tree {name}"))
     }
 
-    pub fn load_days(&self) -> Result<Vec<HistoryDay>> {
-        let stored = self.read_all()?;
-        Ok(group_by_day(stored))
+    fn build_encounter_summary(
+        &self,
+        key: &[u8],
+        record: &EncounterRecord,
+    ) -> EncounterSummaryRecord {
+        let date_time = millis_to_local(record.last_seen_ms);
+        let (date_id, time_label, timestamp_label) = match date_time {
+            Some(dt) => (
+                dt.date_naive().to_string(),
+                dt.format("%H:%M").to_string(),
+                dt.format("%Y-%m-%d %H:%M:%S").to_string(),
+            ),
+            None => (
+                "unknown".to_string(),
+                "--:--".to_string(),
+                "unknown".to_string(),
+            ),
+        };
+
+        let base_title = resolve_title(record);
+
+        EncounterSummaryRecord {
+            key: key.to_vec(),
+            date_id,
+            base_title,
+            encounter_title: record.encounter.title.clone(),
+            time_label,
+            timestamp_label,
+            last_seen_ms: record.last_seen_ms,
+            duration: record.encounter.duration.clone(),
+            encdps: record.encounter.encdps.clone(),
+            damage: record.encounter.damage.clone(),
+            zone: record.encounter.zone.clone(),
+            snapshots: record.snapshots,
+            frames: record.frames.len() as u32,
+        }
     }
 
-    fn read_all(&self) -> Result<Vec<StoredEncounter>> {
-        let mut records = Vec::new();
-        for entry in self.encounters.iter() {
-            let (key_bytes, value_bytes) = entry.context("Failed to iterate encounters history")?;
-            let key = match HistoryKey::from_bytes(key_bytes.as_ref()) {
-                Some(k) => k,
-                None => continue,
-            };
-            let record: EncounterRecord = serde_cbor::from_slice(value_bytes.as_ref())
-                .context("Failed to deserialize encounter record")?;
-            records.push(StoredEncounter { key, record });
+    fn update_date_summary(&self, summary: &EncounterSummaryRecord) -> Result<()> {
+        let key = summary.date_id.as_bytes();
+        let existing = self
+            .date_index
+            .get(key)
+            .context("Failed to read date summary")?;
+
+        let record = if let Some(bytes) = existing {
+            let mut record: DateSummaryRecord =
+                serde_cbor::from_slice(&bytes).context("Failed to deserialize date summary")?;
+            if !record
+                .encounter_ids
+                .iter()
+                .any(|existing_key| existing_key == &summary.key)
+            {
+                record.encounter_ids.insert(0, summary.key.clone());
+            }
+            if summary.last_seen_ms > record.last_seen_ms {
+                record.last_seen_ms = summary.last_seen_ms;
+            }
+            record
+        } else {
+            DateSummaryRecord {
+                date_id: summary.date_id.clone(),
+                last_seen_ms: summary.last_seen_ms,
+                encounter_ids: vec![summary.key.clone()],
+            }
+        };
+
+        let bytes =
+            serde_cbor::to_vec(&record).context("Failed to serialize updated date summary")?;
+        self.date_index
+            .insert(key, bytes)
+            .context("Failed to persist date summary")?;
+        Ok(())
+    }
+
+    pub fn load_dates(&self) -> Result<Vec<HistoryDay>> {
+        let mut days = Vec::new();
+        for entry in self.date_index.iter() {
+            let (key_bytes, value_bytes) = entry.context("Failed to iterate history date index")?;
+            let record: DateSummaryRecord = serde_cbor::from_slice(value_bytes.as_ref())
+                .context("Failed to deserialize date summary")?;
+            let iso_date = String::from_utf8(key_bytes.to_vec()).unwrap_or(record.date_id.clone());
+            let label = format_date_label(&iso_date, record.encounter_ids.len());
+            days.push(HistoryDay {
+                iso_date,
+                label,
+                encounter_count: record.encounter_ids.len(),
+                encounters: Vec::new(),
+                encounter_ids: record.encounter_ids,
+                encounters_loaded: false,
+            });
         }
-        Ok(records)
+        days.sort_by(|a, b| b.iso_date.cmp(&a.iso_date));
+        Ok(days)
+    }
+
+    pub fn load_encounter_summaries(&self, date_id: &str) -> Result<Vec<HistoryEncounterItem>> {
+        let key = date_id.as_bytes();
+        let Some(bytes) = self
+            .date_index
+            .get(key)
+            .context("Failed to read date summary for encounters")?
+        else {
+            return Ok(Vec::new());
+        };
+
+        let date_summary: DateSummaryRecord =
+            serde_cbor::from_slice(bytes.as_ref()).context("Failed to deserialize date summary")?;
+
+        let mut summaries = Vec::new();
+        for encounter_id in &date_summary.encounter_ids {
+            if let Some(bytes) = self
+                .encounter_summaries
+                .get(encounter_id)
+                .context("Failed to read encounter summary")?
+            {
+                let summary: EncounterSummaryRecord = serde_cbor::from_slice(bytes.as_ref())
+                    .context("Failed to deserialize encounter summary")?;
+                summaries.push(summary);
+            }
+        }
+
+        summaries.sort_by(|a, b| b.last_seen_ms.cmp(&a.last_seen_ms));
+
+        Ok(build_history_items_from_summaries(summaries))
+    }
+
+    pub fn load_encounter_record(&self, key: &[u8]) -> Result<EncounterRecord> {
+        let Some(bytes) = self
+            .encounters
+            .get(key)
+            .context("Failed to read encounter record")?
+        else {
+            anyhow::bail!("Encounter record not found");
+        };
+        serde_cbor::from_slice(bytes.as_ref()).context("Failed to deserialize encounter record")
     }
 
     fn init_schema(&self) -> Result<()> {
@@ -565,6 +730,7 @@ fn encode_key(namespace: &str, timestamp_ms: u64, discriminator: u64) -> Vec<u8>
     buf
 }
 
+#[allow(dead_code)]
 fn decode_key(bytes: &[u8]) -> Option<HistoryKey> {
     let mut parts = bytes.split(|b| *b == KEY_SEPARATOR);
     let namespace = parts.next()?;
@@ -632,45 +798,6 @@ fn now_ms() -> u64 {
         .as_millis() as u64
 }
 
-fn group_by_day(records: Vec<StoredEncounter>) -> Vec<HistoryDay> {
-    let mut days: BTreeMap<String, DayBucket> = BTreeMap::new();
-
-    for stored in records {
-        let dt = match millis_to_local(stored.record.last_seen_ms) {
-            Some(dt) => dt,
-            None => continue,
-        };
-        let date = dt.date_naive();
-        let iso_date = date.to_string();
-        let day_label = dt.format("%Y-%m-%d (%a)").to_string();
-
-        let bucket = days
-            .entry(iso_date.clone())
-            .or_insert_with(|| DayBucket::new(iso_date.clone(), day_label));
-
-        let base_title = resolve_title(&stored.record);
-        let time_label = dt.format("%H:%M").to_string();
-        let timestamp_label = dt.format("%Y-%m-%d %H:%M:%S").to_string();
-
-        bucket.entries.push(DayEncounter {
-            key: stored.key,
-            base_title,
-            time_label,
-            last_seen_ms: stored.record.last_seen_ms,
-            timestamp_label,
-            record: stored.record,
-        });
-    }
-
-    let mut days_vec: Vec<HistoryDay> = days
-        .into_values()
-        .map(DayBucket::into_history_day)
-        .collect();
-
-    days_vec.sort_by(|a, b| b.iso_date.cmp(&a.iso_date));
-    days_vec
-}
-
 fn resolve_title(record: &EncounterRecord) -> String {
     let primary = record.encounter.title.trim();
     if !primary.is_empty() {
@@ -688,73 +815,52 @@ fn millis_to_local(ms: u64) -> Option<DateTime<Local>> {
     Local.timestamp_millis_opt(millis).single()
 }
 
-struct DayBucket {
-    iso_date: String,
-    label: String,
-    entries: Vec<DayEncounter>,
-}
-
-impl DayBucket {
-    fn new(iso_date: String, label: String) -> Self {
-        Self {
-            iso_date,
-            label,
-            entries: Vec::new(),
+fn format_date_label(iso_date: &str, encounter_count: usize) -> String {
+    match NaiveDate::parse_from_str(iso_date, "%Y-%m-%d") {
+        Ok(date) => {
+            let weekday = date.format("%a");
+            format!(
+                "{} ({}) · {} encounters",
+                iso_date, weekday, encounter_count
+            )
         }
-    }
-
-    fn into_history_day(mut self) -> HistoryDay {
-        self.entries.sort_by_key(|entry| entry.last_seen_ms);
-
-        let mut totals: HashMap<String, u32> = HashMap::new();
-        for entry in &self.entries {
-            *totals.entry(entry.base_title.clone()).or_insert(0) += 1;
-        }
-
-        let mut occurrences: HashMap<String, u32> = HashMap::new();
-        let encounters = self
-            .entries
-            .into_iter()
-            .map(|entry| {
-                let total = totals.get(&entry.base_title).copied().unwrap_or(1);
-                let counter = occurrences.entry(entry.base_title.clone()).or_insert(0);
-                *counter += 1;
-                let occurrence = *counter;
-                let base_title = entry.base_title;
-                let display_title = if total > 1 {
-                    format!("{} ({})", base_title.as_str(), occurrence)
-                } else {
-                    base_title.clone()
-                };
-                HistoryEncounterItem {
-                    key: entry.key.as_bytes(),
-                    display_title,
-                    base_title,
-                    occurrence,
-                    time_label: entry.time_label,
-                    last_seen_ms: entry.last_seen_ms,
-                    timestamp_label: entry.timestamp_label,
-                    record: entry.record,
-                }
-            })
-            .collect::<Vec<_>>();
-
-        HistoryDay {
-            iso_date: self.iso_date,
-            label: format!("{} · {} encounters", self.label, encounters.len()),
-            encounter_count: encounters.len(),
-            encounters,
-        }
+        Err(_) => format!("{} · {} encounters", iso_date, encounter_count),
     }
 }
 
-struct DayEncounter {
-    key: HistoryKey,
-    base_title: String,
-    time_label: String,
-    last_seen_ms: u64,
-    timestamp_label: String,
-    record: EncounterRecord,
+fn build_history_items_from_summaries(
+    summaries: Vec<EncounterSummaryRecord>,
+) -> Vec<HistoryEncounterItem> {
+    let mut totals: HashMap<String, u32> = HashMap::new();
+    for summary in &summaries {
+        *totals.entry(summary.base_title.clone()).or_insert(0) += 1;
+    }
+
+    let mut occurrences: HashMap<String, u32> = HashMap::new();
+    summaries
+        .into_iter()
+        .map(|summary| {
+            let total = totals.get(&summary.base_title).copied().unwrap_or(1);
+            let counter = occurrences.entry(summary.base_title.clone()).or_insert(0);
+            *counter += 1;
+            let occurrence = *counter;
+            let display_title = if total > 1 {
+                format!("{} ({})", summary.base_title.as_str(), occurrence)
+            } else {
+                summary.base_title.clone()
+            };
+            HistoryEncounterItem {
+                key: summary.key,
+                display_title,
+                base_title: summary.base_title,
+                occurrence,
+                time_label: summary.time_label,
+                last_seen_ms: summary.last_seen_ms,
+                timestamp_label: summary.timestamp_label,
+                record: None,
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -870,46 +976,36 @@ mod tests {
         assert_eq!(parse_number("98%"), 98.0);
     }
 
-    fn stored_encounter(ts: u64, title: &str) -> StoredEncounter {
-        let encounter = EncounterSummary {
-            title: title.into(),
-            zone: String::new(),
+    fn make_summary(key: &[u8], base_title: &str, last_seen: u64) -> EncounterSummaryRecord {
+        EncounterSummaryRecord {
+            key: key.to_vec(),
+            date_id: "2025-01-01".into(),
+            base_title: base_title.into(),
+            encounter_title: base_title.into(),
+            time_label: "12:00".into(),
+            timestamp_label: "2025-01-01 12:00:00".into(),
+            last_seen_ms: last_seen,
             duration: "00:30".into(),
-            encdps: "0".into(),
-            damage: "0".into(),
-            enchps: "0".into(),
-            healed: "0".into(),
-            is_active: false,
-        };
-        let record = EncounterRecord {
-            version: SCHEMA_VERSION,
-            stored_ms: ts,
-            first_seen_ms: ts,
-            last_seen_ms: ts,
-            encounter,
-            rows: Vec::new(),
-            raw_last: None,
-            snapshots: 1,
-            saw_active: false,
-            frames: Vec::new(),
-        };
-        let key = HistoryKey::new(ENCOUNTER_NAMESPACE, ts, ts);
-        StoredEncounter { key, record }
+            encdps: "1000".into(),
+            damage: "100000".into(),
+            zone: "Zone".into(),
+            snapshots: 3,
+            frames: 3,
+        }
     }
 
     #[test]
-    fn group_by_day_numbers_duplicate_titles() {
-        let records = vec![
-            stored_encounter(1_000, "Doma Castle"),
-            stored_encounter(2_000, "Doma Castle"),
-            stored_encounter(3_000, "Striking Dummy"),
+    fn build_history_items_numbers_duplicate_titles() {
+        let summaries = vec![
+            make_summary(&[1], "Doma Castle", 2_000),
+            make_summary(&[2], "Doma Castle", 3_000),
+            make_summary(&[3], "Striking Dummy", 1_000),
         ];
-        let days = group_by_day(records);
-        assert_eq!(days.len(), 1);
-        let day = &days[0];
-        assert_eq!(day.encounters.len(), 3);
-        assert_eq!(day.encounters[0].display_title, "Doma Castle (1)");
-        assert_eq!(day.encounters[1].display_title, "Doma Castle (2)");
-        assert_eq!(day.encounters[2].display_title, "Striking Dummy");
+        let items = build_history_items_from_summaries(summaries);
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].display_title, "Doma Castle (1)");
+        assert_eq!(items[1].display_title, "Doma Castle (2)");
+        assert_eq!(items[2].display_title, "Striking Dummy");
+        assert!(items.iter().all(|item| item.record.is_none()));
     }
 }

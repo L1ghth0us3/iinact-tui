@@ -53,14 +53,6 @@ fn draw_header(f: &mut Frame, area: Rect, s: &AppSnapshot) {
 }
 
 fn draw_body(f: &mut Frame, area: Rect, s: &AppSnapshot) {
-    if s.history.loading {
-        let paragraph = Paragraph::new("Loading…")
-            .alignment(ratatui::layout::Alignment::Center)
-            .block(Block::default().borders(Borders::ALL));
-        f.render_widget(paragraph, area);
-        return;
-    }
-
     if let Some(err) = &s.history.error {
         let block = Paragraph::new(err.as_str())
             .alignment(ratatui::layout::Alignment::Left)
@@ -69,10 +61,29 @@ fn draw_body(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         return;
     }
 
+    let is_loading = s.history.loading;
+
+    if s.history.days.is_empty() {
+        let message = if is_loading {
+            "Loading history…"
+        } else {
+            "No encounters recorded yet."
+        };
+        let block = Paragraph::new(message)
+            .alignment(ratatui::layout::Alignment::Center)
+            .block(Block::default().borders(Borders::ALL));
+        f.render_widget(block, area);
+        return;
+    }
+
     match s.history.level {
         HistoryPanelLevel::Dates => draw_dates(f, area, s),
         HistoryPanelLevel::Encounters => draw_encounters(f, area, s),
         HistoryPanelLevel::EncounterDetail => draw_encounter_detail(f, area, s),
+    }
+
+    if is_loading {
+        render_loading_overlay(f, area, "Loading…");
     }
 }
 
@@ -115,6 +126,14 @@ fn draw_encounters(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         f.render_widget(block, area);
         return;
     };
+
+    if !day.encounters_loaded && !day.encounter_ids.is_empty() {
+        let block = Paragraph::new("Loading encounters…")
+            .alignment(ratatui::layout::Alignment::Center)
+            .block(Block::default().borders(Borders::ALL));
+        f.render_widget(block, area);
+        return;
+    }
 
     if day.encounters.is_empty() {
         let block = Paragraph::new("No encounters captured for this date.")
@@ -166,9 +185,22 @@ fn draw_encounter_detail(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         return;
     };
 
-    let record = &encounter.record;
+    let Some(record) = encounter.record.as_ref() else {
+        let block = Paragraph::new("Loading encounter…")
+            .alignment(Alignment::Center)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(Line::from(vec![Span::styled(
+                        format!("Details · {}", encounter.display_title),
+                        title_style(),
+                    )])),
+            );
+        f.render_widget(block, area);
+        return;
+    };
 
-    let basic_metrics = vec![
+    let basic_metrics = [
         (
             "Encounter",
             if record.encounter.title.is_empty() {
@@ -190,7 +222,7 @@ fn draw_encounter_detail(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         ("Damage", record.encounter.damage.clone()),
     ];
 
-    let technical_metrics = vec![
+    let technical_metrics = [
         ("Snapshots", record.snapshots.to_string()),
         ("Frames", record.frames.len().to_string()),
         ("Last seen", encounter.timestamp_label.clone()),
@@ -320,4 +352,26 @@ fn draw_encounter_detail(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::NONE));
     f.render_widget(hint, layout[2]);
+}
+
+fn render_loading_overlay(f: &mut Frame, area: Rect, message: &str) {
+    if area.width == 0 || area.height == 0 {
+        return;
+    }
+    let text_width = message.chars().count() as u16 + 4;
+    let overlay_width = text_width.min(area.width);
+    let overlay_height = 3.min(area.height).max(1);
+    let x = area.x + (area.width.saturating_sub(overlay_width)) / 2;
+    let y = area.y + (area.height.saturating_sub(overlay_height)) / 2;
+    let overlay = Rect {
+        x,
+        y,
+        width: overlay_width,
+        height: overlay_height,
+    };
+    f.render_widget(Clear, overlay);
+    let block = Paragraph::new(message)
+        .alignment(Alignment::Center)
+        .block(Block::default().borders(Borders::ALL));
+    f.render_widget(block, overlay);
 }
