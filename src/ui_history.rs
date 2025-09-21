@@ -168,7 +168,7 @@ fn draw_encounter_detail(f: &mut Frame, area: Rect, s: &AppSnapshot) {
 
     let record = &encounter.record;
 
-    let metrics = vec![
+    let basic_metrics = vec![
         (
             "Encounter",
             if record.encounter.title.is_empty() {
@@ -188,28 +188,58 @@ fn draw_encounter_detail(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         ("Duration", record.encounter.duration.clone()),
         ("ENCDPS", record.encounter.encdps.clone()),
         ("Damage", record.encounter.damage.clone()),
+    ];
+
+    let technical_metrics = vec![
         ("Snapshots", record.snapshots.to_string()),
+        ("Frames", record.frames.len().to_string()),
         ("Last seen", encounter.timestamp_label.clone()),
     ];
+
+    let summary_lines: Vec<Line> = basic_metrics
+        .iter()
+        .map(|(label, value)| {
+            Line::from(vec![
+                Span::styled(format!("{label}: "), header_style()),
+                Span::styled(value.clone(), value_style()),
+            ])
+        })
+        .collect();
+
+    let technical_lines: Vec<Line> = technical_metrics
+        .iter()
+        .map(|(label, value)| {
+            Line::from(vec![
+                Span::styled(format!("{label}: "), header_style()),
+                Span::styled(value.clone(), value_style()),
+            ])
+        })
+        .collect();
+
+    let max_summary_rows = summary_lines.len().max(technical_lines.len());
+    let mut summary_height = max_summary_rows.saturating_add(2) as u16;
+    let max_height = area.height.max(1u16);
+    if summary_height > max_height {
+        summary_height = max_height;
+    }
+    let min_required = 3u16.min(max_height);
+    if summary_height < min_required {
+        summary_height = min_required;
+    }
 
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(7),
+            Constraint::Length(summary_height),
             Constraint::Min(4),
             Constraint::Length(1),
         ])
         .split(area);
 
-    let summary_lines: Vec<Line> = metrics
-        .into_iter()
-        .map(|(label, value)| {
-            Line::from(vec![
-                Span::styled(format!("{label}: "), header_style()),
-                Span::styled(value, value_style()),
-            ])
-        })
-        .collect();
+    let summary_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+        .split(layout[0]);
 
     let summary = Paragraph::new(summary_lines)
         .block(
@@ -221,7 +251,19 @@ fn draw_encounter_detail(f: &mut Frame, area: Rect, s: &AppSnapshot) {
                 )])),
         )
         .alignment(Alignment::Left);
-    f.render_widget(summary, layout[0]);
+    f.render_widget(summary, summary_chunks[0]);
+
+    let technical = Paragraph::new(technical_lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(Line::from(vec![Span::styled(
+                    "Technical Details".to_string(),
+                    title_style(),
+                )])),
+        )
+        .alignment(Alignment::Left);
+    f.render_widget(technical, summary_chunks[1]);
 
     if record.rows.is_empty() {
         let block = Paragraph::new("No combatants recorded.")
