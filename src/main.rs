@@ -219,7 +219,7 @@ async fn main() -> Result<()> {
         DisableMouseCapture
     )?;
     terminal.show_cursor()?;
-    history_recorder.shutdown();
+    history_recorder.shutdown().await;
     Ok(())
 }
 

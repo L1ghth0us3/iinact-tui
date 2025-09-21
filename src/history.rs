@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Local, TimeZone};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::task;
 
 use crate::config;
@@ -263,14 +263,21 @@ impl HistoryStore {
 }
 
 /// Handle used by producers to send snapshots to the recorder task.
-#[derive(Clone)]
 pub struct RecorderHandle {
+    inner: Arc<RecorderInner>,
+}
+
+struct RecorderInner {
     tx: mpsc::UnboundedSender<RecorderMessage>,
+    shutdown: Mutex<Option<oneshot::Receiver<()>>>,
 }
 
 impl RecorderHandle {
     pub fn record(&self, snapshot: EncounterSnapshot) {
-        let _ = self.tx.send(RecorderMessage::Snapshot(Box::new(snapshot)));
+        let _ = self
+            .inner
+            .tx
+            .send(RecorderMessage::Snapshot(Box::new(snapshot)));
     }
 
     pub fn record_components(
@@ -283,11 +290,27 @@ impl RecorderHandle {
     }
 
     pub fn flush(&self) {
-        let _ = self.tx.send(RecorderMessage::Flush);
+        let _ = self.inner.tx.send(RecorderMessage::Flush);
     }
 
-    pub fn shutdown(&self) {
-        let _ = self.tx.send(RecorderMessage::Shutdown);
+    pub async fn shutdown(&self) {
+        let _ = self.inner.tx.send(RecorderMessage::Shutdown);
+        if let Some(rx) = self.take_shutdown_receiver().await {
+            let _ = rx.await;
+        }
+    }
+
+    async fn take_shutdown_receiver(&self) -> Option<oneshot::Receiver<()>> {
+        let mut guard = self.inner.shutdown.lock().await;
+        guard.take()
+    }
+}
+
+impl Clone for RecorderHandle {
+    fn clone(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+        }
     }
 }
 
@@ -299,20 +322,31 @@ enum RecorderMessage {
 
 pub fn spawn_recorder(store: Arc<HistoryStore>) -> RecorderHandle {
     let (tx, mut rx) = mpsc::unbounded_channel();
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
     tokio::spawn(async move {
         let mut worker = RecorderWorker::new(store);
-        while let Some(msg) = rx.recv().await {
-            match msg {
-                RecorderMessage::Snapshot(snapshot) => worker.on_snapshot(*snapshot).await,
-                RecorderMessage::Flush => worker.on_flush().await,
-                RecorderMessage::Shutdown => {
+        loop {
+            match rx.recv().await {
+                Some(RecorderMessage::Snapshot(snapshot)) => worker.on_snapshot(*snapshot).await,
+                Some(RecorderMessage::Flush) => worker.on_flush().await,
+                Some(RecorderMessage::Shutdown) => {
+                    worker.on_flush().await;
+                    break;
+                }
+                None => {
                     worker.on_flush().await;
                     break;
                 }
             }
         }
+        let _ = shutdown_tx.send(());
     });
-    RecorderHandle { tx }
+    RecorderHandle {
+        inner: Arc::new(RecorderInner {
+            tx,
+            shutdown: Mutex::new(Some(shutdown_rx)),
+        }),
+    }
 }
 
 struct RecorderWorker {
@@ -418,14 +452,6 @@ fn should_rollover(active: &ActiveEncounter, incoming: &EncounterSnapshot) -> bo
     let next = &incoming.encounter;
 
     if !active.saw_active && next.is_active {
-        return true;
-    }
-
-    if next.is_active && previous.title != next.title && !next.title.is_empty() {
-        return true;
-    }
-
-    if next.is_active && previous.zone != next.zone && !next.zone.is_empty() {
         return true;
     }
 
@@ -715,6 +741,15 @@ mod tests {
         let active = ActiveEncounter::from_snapshot(build_snapshot(true, "01:20", "5000"));
         let incoming = build_snapshot(true, "00:05", "100");
         assert!(should_rollover(&active, &incoming));
+    }
+
+    #[test]
+    fn rollover_ignores_title_change_mid_fight() {
+        let active = ActiveEncounter::from_snapshot(build_snapshot(true, "01:20", "5000"));
+        let mut incoming = build_snapshot(true, "01:21", "5200");
+        incoming.encounter.title = "Renamed Encounter".into();
+        incoming.encounter.zone = "Updated Zone".into();
+        assert!(!should_rollover(&active, &incoming));
     }
 
     #[test]
