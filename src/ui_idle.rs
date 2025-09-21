@@ -118,10 +118,6 @@ fn status_lines(snapshot: &AppSnapshot) -> Vec<Line<'static>> {
     vec![
         Line::from(vec![Span::styled(connection, value_style())]),
         Line::from(vec![Span::styled(encounter_label, value_style())]),
-        Line::from(vec![Span::styled(
-            "Press 'm' to resume the meter.",
-            header_style(),
-        )]),
     ]
 }
 
