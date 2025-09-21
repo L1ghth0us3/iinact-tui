@@ -16,7 +16,7 @@ use crate::model::{CombatantRow, EncounterSummary};
 
 const ENCOUNTER_NAMESPACE: &str = "enc";
 const KEY_SEPARATOR: u8 = 0x1F;
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 const META_SCHEMA_VERSION_KEY: &[u8] = b"schema/version";
 
 /// Snapshot prepared for persistence; keeps the raw payload around for future use.
@@ -88,20 +88,63 @@ pub struct EncounterRecord {
     pub snapshots: u32,
     #[serde(default)]
     pub saw_active: bool,
+    #[serde(default)]
+    pub frames: Vec<EncounterFrame>,
 }
 
 impl EncounterRecord {
     fn new(active: ActiveEncounter) -> Self {
+        let ActiveEncounter {
+            first_seen_ms,
+            last_seen_ms,
+            latest_summary,
+            latest_rows,
+            last_raw,
+            saw_active,
+            frames,
+        } = active;
+        let snapshots = frames.len() as u32;
+        let raw_last = if let Some(frame) = frames.last() {
+            Some(frame.raw.clone())
+        } else {
+            Some(last_raw)
+        };
+
         Self {
             version: SCHEMA_VERSION,
             stored_ms: now_ms(),
-            first_seen_ms: active.first_seen_ms,
-            last_seen_ms: active.last_seen_ms,
-            encounter: active.latest_summary,
-            rows: active.latest_rows,
-            raw_last: Some(active.last_raw),
-            snapshots: active.snapshot_count,
-            saw_active: active.saw_active,
+            first_seen_ms,
+            last_seen_ms,
+            encounter: latest_summary,
+            rows: latest_rows,
+            raw_last,
+            snapshots,
+            saw_active,
+            frames,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EncounterFrame {
+    pub received_ms: u64,
+    pub encounter: EncounterSummary,
+    pub rows: Vec<CombatantRow>,
+    pub raw: Value,
+}
+
+impl EncounterFrame {
+    fn new(
+        received_ms: u64,
+        encounter: EncounterSummary,
+        rows: Vec<CombatantRow>,
+        raw: Value,
+    ) -> Self {
+        Self {
+            received_ms,
+            encounter,
+            rows,
+            raw,
         }
     }
 }
@@ -363,6 +406,15 @@ impl RecorderWorker {
     }
 
     async fn on_snapshot(&mut self, snapshot: EncounterSnapshot) {
+        if self.current.is_none() {
+            if !snapshot.encounter.is_active {
+                return;
+            }
+            if !snapshot_has_activity(&snapshot) {
+                return;
+            }
+        }
+
         if let Some(active) = self.current.as_ref() {
             if should_rollover(active, &snapshot) {
                 self.flush_active().await;
@@ -413,8 +465,8 @@ struct ActiveEncounter {
     latest_summary: EncounterSummary,
     latest_rows: Vec<CombatantRow>,
     last_raw: Value,
-    snapshot_count: u32,
     saw_active: bool,
+    frames: Vec<EncounterFrame>,
 }
 
 impl ActiveEncounter {
@@ -426,23 +478,31 @@ impl ActiveEncounter {
             received_ms,
         } = snapshot;
         let is_active = encounter.is_active;
+        let frame = EncounterFrame::new(received_ms, encounter.clone(), rows.clone(), raw.clone());
         Self {
             first_seen_ms: received_ms,
             last_seen_ms: received_ms,
             latest_summary: encounter,
             latest_rows: rows,
             last_raw: raw,
-            snapshot_count: 1,
             saw_active: is_active,
+            frames: vec![frame],
         }
     }
 
     fn update(&mut self, snapshot: EncounterSnapshot) {
         self.last_seen_ms = snapshot.received_ms;
-        self.latest_summary = snapshot.encounter;
-        self.latest_rows = snapshot.rows;
-        self.last_raw = snapshot.raw;
-        self.snapshot_count = self.snapshot_count.saturating_add(1);
+        let EncounterSnapshot {
+            encounter,
+            rows,
+            raw,
+            received_ms,
+        } = snapshot;
+        let frame = EncounterFrame::new(received_ms, encounter.clone(), rows.clone(), raw.clone());
+        self.latest_summary = encounter;
+        self.latest_rows = rows;
+        self.last_raw = raw;
+        self.frames.push(frame);
         self.saw_active |= self.latest_summary.is_active;
     }
 }
@@ -476,6 +536,23 @@ fn should_rollover(active: &ActiveEncounter, incoming: &EncounterSnapshot) -> bo
     }
 
     false
+}
+
+fn snapshot_has_activity(snapshot: &EncounterSnapshot) -> bool {
+    if snapshot.encounter.is_active {
+        return true;
+    }
+    if parse_number(&snapshot.encounter.damage) > 0.0
+        || parse_number(&snapshot.encounter.healed) > 0.0
+        || parse_number(&snapshot.encounter.encdps) > 0.0
+        || parse_number(&snapshot.encounter.enchps) > 0.0
+    {
+        return true;
+    }
+    snapshot
+        .rows
+        .iter()
+        .any(|row| row.damage > 0.0 || row.healed > 0.0 || row.encdps > 0.0 || row.enchps > 0.0)
 }
 
 fn encode_key(namespace: &str, timestamp_ms: u64, discriminator: u64) -> Vec<u8> {
@@ -753,6 +830,41 @@ mod tests {
     }
 
     #[test]
+    fn encounter_record_preserves_all_frames() {
+        let mut active = ActiveEncounter::from_snapshot(build_snapshot(true, "00:01", "100"));
+        active.update(build_snapshot(true, "00:02", "200"));
+        active.update(build_snapshot(false, "00:02", "200"));
+        let record = EncounterRecord::new(active);
+        assert_eq!(record.snapshots, 3);
+        assert_eq!(record.frames.len(), 3);
+        assert!(record.frames.first().unwrap().encounter.is_active);
+        assert!(!record.frames.last().unwrap().encounter.is_active);
+    }
+
+    #[test]
+    fn snapshot_activity_detects_idle_state() {
+        let idle = EncounterSnapshot::new(
+            EncounterSummary {
+                title: String::new(),
+                zone: String::new(),
+                duration: "00:00".into(),
+                encdps: "0".into(),
+                damage: "0".into(),
+                enchps: "0".into(),
+                healed: "0".into(),
+                is_active: false,
+            },
+            Vec::new(),
+            json!({ "type": "CombatData" }),
+        );
+        assert!(!snapshot_has_activity(&idle));
+
+        let mut tick = idle.clone();
+        tick.encounter.encdps = "15".into();
+        assert!(snapshot_has_activity(&tick));
+    }
+
+    #[test]
     fn parse_number_handles_commas_and_percent() {
         assert_eq!(parse_number("12,345.6"), 12345.6);
         assert_eq!(parse_number("98%"), 98.0);
@@ -779,6 +891,7 @@ mod tests {
             raw_last: None,
             snapshots: 1,
             saw_active: false,
+            frames: Vec::new(),
         };
         let key = HistoryKey::new(ENCOUNTER_NAMESPACE, ts, ts);
         StoredEncounter { key, record }
