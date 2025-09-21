@@ -72,6 +72,8 @@ python3 query_iinact.py --show-logline
 - Normalize numeric strings to floats (strip commas and percent signs).
 - Present a live table sorted by ENCDPS; refresh on each incoming `CombatData`.
 - Optional: filter out `isActive == "false"` to avoid stale snapshots.
+- Track encounter activity timestamps so the UI can surface an idle state when no fights are active for the configured timeout.
+- Surface user-facing settings through a modal pane and persist them to disk so inputs survive restarts.
 
 ### Current TUI Behavior (v0.2.0)
 - Rendering
@@ -80,10 +82,16 @@ python3 query_iinact.py --show-logline
   - Header: line 1 shows Encounter/Zone; line 2 shows Dur | ENCDPS | Damage; a dim gray separator appears under the table header.
   - Party‑only rows using a known job set; case‑insensitive key lookup.
 - Decorations (pluggable)
-  - `Decor: underline` (default): two‑line rows with a thin role‑colored bar directly under each entry.
-  - `Decor: background`: one‑line rows with a role‑colored background meter behind each entry.
-  - `Decor: none`: no additional row decoration; compact one‑line rows.
+  - `Decor: underline` (default): two-line rows with a thin role-colored bar directly under each entry.
+  - `Decor: background`: one-line rows with a role-colored background meter behind each entry.
+  - `Decor: none`: no additional row decoration; compact one-line rows.
   - Cycle key: `d`.
+- Modes & status
+  - `m` toggles between DPS and healing views.
+  - Idle indicator flips the footer to “Connected (idle)” after the configured timeout; disconnected shows red.
+- Settings & persistence
+  - `s` opens a modal settings pane; `↑/↓` adjusts the idle timeout.
+  - Settings persist to `~/.config/iinact-tui/iinact-tui.config` (override with `IINACT_TUI_CONFIG_DIR`; Windows uses `%APPDATA%\iinact-tui`).
 - Styling
-  - Foreground‑only for normal widgets to preserve terminal blur/transparency. Background is used only for the meter fill.
-  - Role colors (xterm‑256): tank=75, healer=41, dps=124; job name text uses per‑job colors.
+  - Foreground-only for normal widgets to preserve terminal blur/transparency. Background is used only for the meter fill.
+  - Role colors (xterm-256): tank=75, healer=41, dps=124; job name text uses per-job colors.

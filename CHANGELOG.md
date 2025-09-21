@@ -7,7 +7,22 @@ The format is inspired by Keep a Changelog and uses calendar dates (YYYY‑MM‑
 ## [Unreleased]
 - Add optional color presets and theme tweaks for background meters.
 - In‑TUI URL editor to switch WS endpoints.
-- Persist user preferences between runs.
+
+## [0.2.0] - 2025-09-21
+
+Highlights
+- Added a modal settings pane (`s`) that lets you adjust configurable options without leaving the meter.
+- Idle detection now surfaces in the footer as “Connected (idle)” once no active combat has been seen for the configured timeout.
+- Idle timeout is user-adjustable with `↑/↓` while the settings pane is open and persists between runs.
+- Configuration is stored as JSON under `~/.config/iinact-tui/iinact-tui.config` (override via `IINACT_TUI_CONFIG_DIR`; Windows uses `%APPDATA%\iinact-tui`).
+- Generalized status colors: idle shows dark orange, disconnect shows red.
+
+Controls
+- `s`: toggle settings pane.
+- `↑/↓`: adjust idle timeout when the settings pane is visible.
+- `m`: toggle DPS ↔ HEAL table mode.
+- `d`: cycle table decorations (underline → background → none).
+- `q` / `Esc`: quit.
 
 ## [0.1.0] - 2025-09-20
 Initial MVP of the IINACT terminal DPS meter (ratatui).
@@ -30,4 +45,3 @@ Bug fixes and polish
 - Ensured header separator always renders (all widths).
 - Encounter title stays reactive during active fights (falls back to Zone if “Encounter”/empty).
 - Removed experimental gradient bars; simplified to solid role colors for clarity.
-
