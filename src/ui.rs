@@ -6,7 +6,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table};
 use ratatui::Frame;
 
-use crate::model::{AppSnapshot, Decoration, SettingsField, ViewMode};
+use crate::model::{AppSnapshot, CombatantRow, Decoration, SettingsField, ViewMode};
 use crate::theme::{header_style, job_color, role_bar_color, title_style, value_style, TEXT};
 
 pub fn draw(f: &mut Frame, s: &AppSnapshot) {
@@ -42,6 +42,269 @@ fn right_align(text: &str, width: usize) -> String {
             .collect()
     } else {
         format!("{:>width$}", text, width = width)
+    }
+}
+
+#[derive(Copy, Clone)]
+enum TableVariant {
+    Full,
+    NoDeaths,
+    NoDhDeaths,
+    Minimal,
+    NameOnly,
+}
+
+impl TableVariant {
+    fn from_width(width: usize) -> Self {
+        if width >= 90 {
+            TableVariant::Full
+        } else if width >= 72 {
+            TableVariant::NoDeaths
+        } else if width >= 58 {
+            TableVariant::NoDhDeaths
+        } else if width >= 44 {
+            TableVariant::Minimal
+        } else {
+            TableVariant::NameOnly
+        }
+    }
+}
+
+enum Align {
+    Left,
+    Right { width: usize },
+}
+
+impl Align {
+    fn format(&self, text: &str) -> String {
+        match self {
+            Align::Left => text.to_string(),
+            Align::Right { width } => right_align(text, *width),
+        }
+    }
+}
+
+struct ColumnSpec {
+    header: &'static str,
+    align: Align,
+    width: Constraint,
+    value: fn(&CombatantRow) -> String,
+    style: Option<fn(&CombatantRow) -> Style>,
+}
+
+impl ColumnSpec {
+    fn header_cell(&self) -> Cell<'static> {
+        Cell::from(self.align.format(self.header))
+    }
+
+    fn data_cell(&self, row: &CombatantRow) -> Cell<'static> {
+        let text = (self.value)(row);
+        let formatted = self.align.format(&text);
+        let mut cell = Cell::from(formatted);
+        if let Some(style_fn) = self.style {
+            cell = cell.style(style_fn(row));
+        }
+        cell
+    }
+}
+
+struct LayoutSpec {
+    columns: Vec<ColumnSpec>,
+    header_height: u16,
+    column_spacing: u16,
+}
+
+impl LayoutSpec {
+    fn new(columns: Vec<ColumnSpec>) -> Self {
+        LayoutSpec {
+            columns,
+            header_height: 2,
+            column_spacing: 1,
+        }
+    }
+
+    fn with_spacing(mut self, spacing: u16) -> Self {
+        self.column_spacing = spacing;
+        self
+    }
+
+    fn header_row(&self) -> Row<'static> {
+        Row::new(self.columns.iter().map(|col| col.header_cell()))
+            .style(header_style())
+            .height(self.header_height)
+    }
+
+    fn data_row(&self, row: &CombatantRow, row_height: u16) -> Row<'static> {
+        Row::new(self.columns.iter().map(|col| col.data_cell(row))).height(row_height)
+    }
+
+    fn widths(&self) -> Vec<Constraint> {
+        self.columns.iter().map(|col| col.width).collect()
+    }
+}
+
+fn name_style(row: &CombatantRow) -> Style {
+    Style::default().fg(job_color(&row.job))
+}
+
+fn value_name(row: &CombatantRow) -> String {
+    row.name.clone()
+}
+
+fn value_share(row: &CombatantRow) -> String {
+    row.share_str.clone()
+}
+
+fn value_heal_share(row: &CombatantRow) -> String {
+    row.heal_share_str.clone()
+}
+
+fn value_encdps(row: &CombatantRow) -> String {
+    row.encdps_str.clone()
+}
+
+fn value_enchps(row: &CombatantRow) -> String {
+    row.enchps_str.clone()
+}
+
+fn value_job(row: &CombatantRow) -> String {
+    row.job.clone()
+}
+
+fn value_crit(row: &CombatantRow) -> String {
+    row.crit.clone()
+}
+
+fn value_dh(row: &CombatantRow) -> String {
+    row.dh.clone()
+}
+
+fn value_deaths(row: &CombatantRow) -> String {
+    row.deaths.clone()
+}
+
+fn value_overheal(row: &CombatantRow) -> String {
+    row.overheal_pct.clone()
+}
+
+fn value_name_with_share(row: &CombatantRow) -> String {
+    format!("{}  [{}]", row.name, row.share_str)
+}
+
+fn value_name_with_heal_share(row: &CombatantRow) -> String {
+    format!("{}  [{}]", row.name, row.heal_share_str)
+}
+
+fn name_column(width: Constraint) -> ColumnSpec {
+    ColumnSpec {
+        header: "Name",
+        align: Align::Left,
+        width,
+        value: value_name,
+        style: Some(name_style),
+    }
+}
+
+fn right_column(
+    header: &'static str,
+    align_width: usize,
+    width: Constraint,
+    value: fn(&CombatantRow) -> String,
+) -> ColumnSpec {
+    ColumnSpec {
+        header,
+        align: Align::Right { width: align_width },
+        width,
+        value,
+        style: None,
+    }
+}
+
+fn left_column(
+    header: &'static str,
+    width: Constraint,
+    value: fn(&CombatantRow) -> String,
+    style: Option<fn(&CombatantRow) -> Style>,
+) -> ColumnSpec {
+    ColumnSpec {
+        header,
+        align: Align::Left,
+        width,
+        value,
+        style,
+    }
+}
+
+fn layout_for(mode: ViewMode, variant: TableVariant) -> LayoutSpec {
+    match (mode, variant) {
+        (ViewMode::Dps, TableVariant::Full) => LayoutSpec::new(vec![
+            name_column(Constraint::Percentage(34)),
+            right_column("Share%", 7, Constraint::Length(7), value_share),
+            right_column("ENCDPS", 10, Constraint::Length(10), value_encdps),
+            right_column("Job", 5, Constraint::Length(5), value_job),
+            right_column("Crit%", 8, Constraint::Length(8), value_crit),
+            right_column("DH%", 8, Constraint::Length(8), value_dh),
+            right_column("Deaths", 8, Constraint::Length(8), value_deaths),
+        ]),
+        (ViewMode::Heal, TableVariant::Full) => LayoutSpec::new(vec![
+            name_column(Constraint::Percentage(34)),
+            right_column("Heal%", 7, Constraint::Length(7), value_heal_share),
+            right_column("ENCHPS", 10, Constraint::Length(10), value_enchps),
+            right_column("Job", 5, Constraint::Length(5), value_job),
+            right_column("Overheal%", 10, Constraint::Length(10), value_overheal),
+            right_column("Deaths", 8, Constraint::Length(8), value_deaths),
+        ]),
+        (ViewMode::Dps, TableVariant::NoDeaths) => LayoutSpec::new(vec![
+            name_column(Constraint::Percentage(38)),
+            right_column("Share%", 7, Constraint::Length(7), value_share),
+            right_column("ENCDPS", 9, Constraint::Length(9), value_encdps),
+            right_column("Job", 5, Constraint::Length(5), value_job),
+            right_column("Crit%", 6, Constraint::Length(6), value_crit),
+            right_column("DH%", 6, Constraint::Length(6), value_dh),
+        ]),
+        (ViewMode::Heal, TableVariant::NoDeaths) => LayoutSpec::new(vec![
+            name_column(Constraint::Percentage(44)),
+            right_column("Heal%", 7, Constraint::Length(7), value_heal_share),
+            right_column("ENCHPS", 9, Constraint::Length(9), value_enchps),
+            right_column("Job", 5, Constraint::Length(5), value_job),
+            right_column("Overheal%", 9, Constraint::Length(9), value_overheal),
+        ]),
+        (ViewMode::Dps, TableVariant::NoDhDeaths) => LayoutSpec::new(vec![
+            name_column(Constraint::Percentage(54)),
+            right_column("Share%", 7, Constraint::Length(7), value_share),
+            right_column("ENCDPS", 9, Constraint::Length(9), value_encdps),
+            right_column("Crit%", 6, Constraint::Length(6), value_crit),
+        ]),
+        (ViewMode::Heal, TableVariant::NoDhDeaths) => LayoutSpec::new(vec![
+            name_column(Constraint::Percentage(58)),
+            right_column("Heal%", 7, Constraint::Length(7), value_heal_share),
+            right_column("ENCHPS", 9, Constraint::Length(9), value_enchps),
+            right_column("Job", 5, Constraint::Length(5), value_job),
+        ]),
+        (ViewMode::Dps, TableVariant::Minimal) => LayoutSpec::new(vec![
+            name_column(Constraint::Percentage(64)),
+            right_column("Share%", 6, Constraint::Length(6), value_share),
+            right_column("ENCDPS", 9, Constraint::Length(9), value_encdps),
+        ]),
+        (ViewMode::Heal, TableVariant::Minimal) => LayoutSpec::new(vec![
+            name_column(Constraint::Percentage(64)),
+            right_column("Heal%", 6, Constraint::Length(6), value_heal_share),
+            right_column("ENCHPS", 9, Constraint::Length(9), value_enchps),
+        ]),
+        (ViewMode::Dps, TableVariant::NameOnly) => LayoutSpec::new(vec![left_column(
+            "Name (Share%)",
+            Constraint::Percentage(100),
+            value_name_with_share,
+            Some(name_style),
+        )])
+        .with_spacing(0),
+        (ViewMode::Heal, TableVariant::NameOnly) => LayoutSpec::new(vec![left_column(
+            "Name (Heal%)",
+            Constraint::Percentage(100),
+            value_name_with_heal_share,
+            Some(name_style),
+        )])
+        .with_spacing(0),
     }
 }
 
@@ -145,335 +408,27 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
     f.render_widget(Clear, area);
     let w = area.width as usize;
     let row_h = s.decoration.row_height();
+    let variant = TableVariant::from_width(w);
+    let layout = layout_for(s.mode, variant);
 
-    // Breakpoints: progressively hide columns on narrow terminals
-    enum Variant {
-        Full,
-        NoDeaths,
-        NoDHDeaths,
-        Minimal,
-        NameOnly,
-    }
-    let variant = if w >= 90 {
-        Variant::Full
-    } else if w >= 72 {
-        Variant::NoDeaths
-    } else if w >= 58 {
-        Variant::NoDHDeaths
-    } else if w >= 44 {
-        Variant::Minimal
-    } else {
-        Variant::NameOnly
-    };
-
-    // Draw background meters first (behind text) when enabled
     if matches!(s.decoration, Decoration::Background) {
-        draw_bg_meters(f, area, s);
+        draw_bg_meters(f, area, s, layout.header_height);
     }
 
-    let heal_mode = matches!(s.mode, ViewMode::Heal);
-    match variant {
-        Variant::Full => {
-            let headers = if !heal_mode {
-                Row::new([
-                    Cell::from("Name"),
-                    Cell::from(right_align("Share%", 7)),
-                    Cell::from(right_align("ENCDPS", 10)),
-                    Cell::from(right_align("Job", 5)),
-                    Cell::from(right_align("Crit%", 8)),
-                    Cell::from(right_align("DH%", 8)),
-                    Cell::from(right_align("Deaths", 8)),
-                ])
-            } else {
-                Row::new([
-                    Cell::from("Name"),
-                    Cell::from(right_align("Heal%", 7)),
-                    Cell::from(right_align("ENCHPS", 10)),
-                    Cell::from(right_align("Job", 5)),
-                    Cell::from(right_align("Overheal%", 10)),
-                    Cell::from(right_align("Deaths", 8)),
-                ])
-            }
-            .height(2)
-            .style(header_style());
-            let rows = s.rows.iter().map(|r| {
-                if !heal_mode {
-                    let share = right_align(&r.share_str, 7);
-                    let enc = right_align(&r.encdps_str, 10);
-                    let job = right_align(&r.job, 5);
-                    let crit = right_align(&r.crit, 8);
-                    let dh = right_align(&r.dh, 8);
-                    let deaths = right_align(&r.deaths, 8);
-                    Row::new([
-                        Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
-                        Cell::from(share),
-                        Cell::from(enc),
-                        Cell::from(job),
-                        Cell::from(crit),
-                        Cell::from(dh),
-                        Cell::from(deaths),
-                    ])
-                } else {
-                    let share = right_align(&r.heal_share_str, 7);
-                    let enc = right_align(&r.enchps_str, 10);
-                    let job = right_align(&r.job, 5);
-                    let oh = right_align(&r.overheal_pct, 10);
-                    let deaths = right_align(&r.deaths, 8);
-                    Row::new([
-                        Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
-                        Cell::from(share),
-                        Cell::from(enc),
-                        Cell::from(job),
-                        Cell::from(oh),
-                        Cell::from(deaths),
-                    ])
-                }
-                .height(row_h)
-            });
-            let widths: Vec<Constraint> = if !heal_mode {
-                vec![
-                    Constraint::Percentage(34),
-                    Constraint::Length(7),
-                    Constraint::Length(10),
-                    Constraint::Length(5),
-                    Constraint::Length(8),
-                    Constraint::Length(8),
-                    Constraint::Length(8),
-                ]
-            } else {
-                vec![
-                    Constraint::Percentage(34),
-                    Constraint::Length(7),
-                    Constraint::Length(10),
-                    Constraint::Length(5),
-                    Constraint::Length(10),
-                    Constraint::Length(8),
-                ]
-            };
-            let table = Table::new(rows, widths)
-                .header(headers)
-                .block(Block::default().borders(Borders::NONE))
-                .column_spacing(1);
-            f.render_widget(table, area);
-        }
-        Variant::NoDeaths => {
-            let headers = if !heal_mode {
-                Row::new([
-                    Cell::from("Name"),
-                    Cell::from(right_align("Share%", 7)),
-                    Cell::from(right_align("ENCDPS", 9)),
-                    Cell::from(right_align("Job", 5)),
-                    Cell::from(right_align("Crit%", 6)),
-                    Cell::from(right_align("DH%", 6)),
-                ])
-            } else {
-                Row::new([
-                    Cell::from("Name"),
-                    Cell::from(right_align("Heal%", 7)),
-                    Cell::from(right_align("ENCHPS", 9)),
-                    Cell::from(right_align("Job", 5)),
-                    Cell::from(right_align("Overheal%", 9)),
-                ])
-            }
-            .height(2)
-            .style(header_style());
-            let rows = s.rows.iter().map(|r| {
-                if !heal_mode {
-                    let share = right_align(&r.share_str, 7);
-                    let enc = right_align(&r.encdps_str, 9);
-                    let job = right_align(&r.job, 5);
-                    let crit = right_align(&r.crit, 6);
-                    let dh = right_align(&r.dh, 6);
-                    Row::new([
-                        Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
-                        Cell::from(share),
-                        Cell::from(enc),
-                        Cell::from(job),
-                        Cell::from(crit),
-                        Cell::from(dh),
-                    ])
-                } else {
-                    let share = right_align(&r.heal_share_str, 7);
-                    let enc = right_align(&r.enchps_str, 9);
-                    let job = right_align(&r.job, 5);
-                    let oh = right_align(&r.overheal_pct, 9);
-                    Row::new([
-                        Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
-                        Cell::from(share),
-                        Cell::from(enc),
-                        Cell::from(job),
-                        Cell::from(oh),
-                    ])
-                }
-                .height(row_h)
-            });
-            let widths: Vec<Constraint> = if !heal_mode {
-                vec![
-                    Constraint::Percentage(38),
-                    Constraint::Length(7),
-                    Constraint::Length(9),
-                    Constraint::Length(5),
-                    Constraint::Length(6),
-                    Constraint::Length(6),
-                ]
-            } else {
-                vec![
-                    Constraint::Percentage(44),
-                    Constraint::Length(7),
-                    Constraint::Length(9),
-                    Constraint::Length(5),
-                    Constraint::Length(9),
-                ]
-            };
-            let table = Table::new(rows, widths)
-                .header(headers)
-                .block(Block::default().borders(Borders::NONE))
-                .column_spacing(1);
-            f.render_widget(table, area);
-        }
-        Variant::NoDHDeaths => {
-            let headers = if !heal_mode {
-                Row::new([
-                    Cell::from("Name"),
-                    Cell::from(right_align("Share%", 7)),
-                    Cell::from(right_align("ENCDPS", 9)),
-                    Cell::from(right_align("Crit%", 6)),
-                ])
-            } else {
-                Row::new([
-                    Cell::from("Name"),
-                    Cell::from(right_align("Heal%", 7)),
-                    Cell::from(right_align("ENCHPS", 9)),
-                    Cell::from(right_align("Job", 5)),
-                ])
-            }
-            .height(2)
-            .style(header_style());
-            let rows = s.rows.iter().map(|r| {
-                if !heal_mode {
-                    let share = right_align(&r.share_str, 7);
-                    let enc = right_align(&r.encdps_str, 9);
-                    let crit = right_align(&r.crit, 6);
-                    Row::new([
-                        Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
-                        Cell::from(share),
-                        Cell::from(enc),
-                        Cell::from(crit),
-                    ])
-                } else {
-                    let share = right_align(&r.heal_share_str, 7);
-                    let enc = right_align(&r.enchps_str, 9);
-                    let job = right_align(&r.job, 5);
-                    Row::new([
-                        Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
-                        Cell::from(share),
-                        Cell::from(enc),
-                        Cell::from(job),
-                    ])
-                }
-                .height(row_h)
-            });
-            let table = Table::new(
-                rows,
-                if !heal_mode {
-                    [
-                        Constraint::Percentage(54),
-                        Constraint::Length(7),
-                        Constraint::Length(9),
-                        Constraint::Length(6),
-                    ]
-                } else {
-                    [
-                        Constraint::Percentage(58),
-                        Constraint::Length(7),
-                        Constraint::Length(9),
-                        Constraint::Length(5),
-                    ]
-                },
-            )
-            .header(headers)
-            .block(Block::default().borders(Borders::NONE))
-            .column_spacing(1);
-            f.render_widget(table, area);
-        }
-        Variant::Minimal => {
-            let headers = if !heal_mode {
-                Row::new([
-                    Cell::from("Name"),
-                    Cell::from(right_align("Share%", 6)),
-                    Cell::from(right_align("ENCDPS", 9)),
-                ])
-            } else {
-                Row::new([
-                    Cell::from("Name"),
-                    Cell::from(right_align("Heal%", 6)),
-                    Cell::from(right_align("ENCHPS", 9)),
-                ])
-            }
-            .height(2)
-            .style(header_style());
-            let rows = s.rows.iter().map(|r| {
-                if !heal_mode {
-                    let share = right_align(&r.share_str, 6);
-                    let enc = right_align(&r.encdps_str, 9);
-                    Row::new([
-                        Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
-                        Cell::from(share),
-                        Cell::from(enc),
-                    ])
-                } else {
-                    let share = right_align(&r.heal_share_str, 6);
-                    let enc = right_align(&r.enchps_str, 9);
-                    Row::new([
-                        Cell::from(r.name.clone()).style(Style::default().fg(job_color(&r.job))),
-                        Cell::from(share),
-                        Cell::from(enc),
-                    ])
-                }
-                .height(row_h)
-            });
-            let table = Table::new(
-                rows,
-                [
-                    Constraint::Percentage(64),
-                    Constraint::Length(6),
-                    Constraint::Length(9),
-                ],
-            )
-            .header(headers)
-            .block(Block::default().borders(Borders::NONE))
-            .column_spacing(1);
-            f.render_widget(table, area);
-        }
-        Variant::NameOnly => {
-            // Compose a single column: "Name  [Share%]"
-            let headers = Row::new([Cell::from(if !heal_mode {
-                "Name (Share%)"
-            } else {
-                "Name (Heal%)"
-            })])
-            .height(2)
-            .style(header_style());
-            let rows = s.rows.iter().map(|r| {
-                let text = if !heal_mode {
-                    format!("{}  [{}]", r.name, r.share_str)
-                } else {
-                    format!("{}  [{}]", r.name, r.heal_share_str)
-                };
-                Row::new([Cell::from(text).style(Style::default().fg(job_color(&r.job)))])
-                    .height(row_h)
-            });
-            let table = Table::new(rows, [Constraint::Percentage(100)])
-                .header(headers)
-                .block(Block::default().borders(Borders::NONE))
-                .column_spacing(0);
-            f.render_widget(table, area);
-        }
-    }
+    let table = Table::new(
+        s.rows.iter().map(|r| layout.data_row(r, row_h)),
+        layout.widths(),
+    )
+    .header(layout.header_row())
+    .block(Block::default().borders(Borders::NONE))
+    .column_spacing(layout.column_spacing);
 
-    // Always draw the thin header separator after rendering the table
-    if area.height >= 2 {
-        let sep_y = area.y.saturating_add(1);
+    f.render_widget(table, area);
+
+    // Draw the thin header separator after rendering the table
+    if area.height > layout.header_height && layout.header_height > 0 {
+        let sep_offset = layout.header_height.saturating_sub(1);
+        let sep_y = area.y.saturating_add(sep_offset);
         if sep_y < area.y + area.height {
             let width = area.width as usize;
             let line = "─".repeat(width);
@@ -491,9 +446,8 @@ fn draw_table(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         }
     }
 
-    // In underline mode, draw thin underline bars under each row
     if matches!(s.decoration, Decoration::Underline) {
-        draw_underlines(f, area, s);
+        draw_underlines(f, area, s, layout.header_height);
     }
 }
 
@@ -650,8 +604,8 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     vertical[1]
 }
 
-fn draw_bg_meters(f: &mut Frame, area: Rect, s: &AppSnapshot) {
-    if area.height <= 2 {
+fn draw_bg_meters(f: &mut Frame, area: Rect, s: &AppSnapshot, header_lines: u16) {
+    if area.height <= header_lines {
         return;
     }
     // Determine max ENCDPS to scale bars
@@ -663,7 +617,6 @@ fn draw_bg_meters(f: &mut Frame, area: Rect, s: &AppSnapshot) {
     if max_dps <= 0.0 {
         return;
     }
-    let header_lines = 2u16; // table header consumes 2 lines
     let width = area.width as usize;
     let visible_rows = (area.height.saturating_sub(header_lines)) as usize;
     for (i, r) in s.rows.iter().take(visible_rows).enumerate() {
@@ -695,8 +648,8 @@ fn draw_bg_meters(f: &mut Frame, area: Rect, s: &AppSnapshot) {
 }
 
 #[allow(dead_code)]
-fn draw_underlines(f: &mut Frame, area: Rect, s: &AppSnapshot) {
-    if area.height <= 1 {
+fn draw_underlines(f: &mut Frame, area: Rect, s: &AppSnapshot, header_lines: u16) {
+    if area.height <= header_lines {
         return;
     }
     let max_dps = s
@@ -708,8 +661,7 @@ fn draw_underlines(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         return;
     }
 
-    // Header consumes 2 lines; each row consumes 2 lines; underline on the second line
-    let header_lines = 2u16;
+    // Each row consumes 2 lines; underline on the second line
     let usable_height = area.height.saturating_sub(header_lines);
     let visible_rows = (usable_height / 2) as usize;
     let width = area.width as usize;
