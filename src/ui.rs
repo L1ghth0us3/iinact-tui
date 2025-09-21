@@ -8,6 +8,7 @@ use ratatui::Frame;
 
 use crate::model::{AppSnapshot, CombatantRow, Decoration, SettingsField, ViewMode};
 use crate::theme::{header_style, job_color, role_bar_color, title_style, value_style, TEXT};
+use crate::ui_idle;
 
 pub fn draw(f: &mut Frame, s: &AppSnapshot) {
     // Split into header + table + footer/status
@@ -21,7 +22,11 @@ pub fn draw(f: &mut Frame, s: &AppSnapshot) {
         .split(f.size());
 
     draw_header(f, chunks[0], s);
-    draw_table(f, chunks[1], s);
+    if s.is_idle {
+        ui_idle::draw_idle(f, chunks[1], s);
+    } else {
+        draw_table(f, chunks[1], s);
+    }
     draw_status(f, chunks[2], s);
 
     if s.show_settings {

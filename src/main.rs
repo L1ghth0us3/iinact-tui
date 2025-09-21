@@ -16,6 +16,7 @@ mod model;
 mod parse;
 mod theme;
 mod ui;
+mod ui_idle;
 mod ws_client;
 
 use model::{AppEvent, AppSettings, AppState, SettingsField, WS_URL_DEFAULT};

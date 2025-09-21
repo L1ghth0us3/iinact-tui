@@ -17,9 +17,42 @@ pub struct AppSnapshot {
     pub decoration: Decoration,
     pub mode: ViewMode,
     pub is_idle: bool,
+    pub idle_scene: IdleScene,
     pub settings: AppSettings,
     pub show_settings: bool,
     pub settings_cursor: SettingsField,
+}
+
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum IdleScene {
+    #[default]
+    Status,
+    TopCritChain,
+    AsciiArt,
+    TipOfTheDay,
+    AchievementTicker,
+}
+
+impl IdleScene {
+    pub fn label(self) -> &'static str {
+        match self {
+            IdleScene::Status => "status",
+            IdleScene::TopCritChain => "top-crit-chain",
+            IdleScene::AsciiArt => "ascii-art",
+            IdleScene::TipOfTheDay => "tip",
+            IdleScene::AchievementTicker => "achievements",
+        }
+    }
+
+    pub fn description(self) -> &'static str {
+        match self {
+            IdleScene::Status => "Connection & encounter healthcheck",
+            IdleScene::TopCritChain => "Highlights the longest critical damage streak",
+            IdleScene::AsciiArt => "Rotating ASCII art showcase",
+            IdleScene::TipOfTheDay => "Rotation and encounter tips",
+            IdleScene::AchievementTicker => "Recently unlocked achievements",
+        }
+    }
 }
 
 #[derive(Clone, Default, Debug)]
@@ -32,6 +65,7 @@ pub struct AppState {
     pub rows: Vec<CombatantRow>,
     pub decoration: Decoration,
     pub mode: ViewMode,
+    pub idle_scene: IdleScene,
     pub settings: AppSettings,
     pub show_settings: bool,
     pub settings_cursor: SettingsField,
@@ -58,6 +92,7 @@ impl AppState {
                 self.encounter = Some(encounter);
                 self.rows = rows;
                 self.last_update = Some(now);
+                self.idle_scene = IdleScene::Status;
                 if self
                     .encounter
                     .as_ref()
@@ -84,6 +119,7 @@ impl AppState {
             decoration: self.decoration,
             mode: self.mode,
             is_idle: self.is_idle(now),
+            idle_scene: self.idle_scene,
             settings: self.settings.clone(),
             show_settings: self.show_settings,
             settings_cursor: self.settings_cursor,
