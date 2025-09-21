@@ -8,13 +8,34 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AppConfig {
+    #[serde(default = "default_idle_seconds")]
     pub idle_seconds: u64,
+    #[serde(default = "default_decoration")]
+    pub default_decoration: String,
+    #[serde(default = "default_mode")]
+    pub default_mode: String,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
-        Self { idle_seconds: 5 }
+        Self {
+            idle_seconds: default_idle_seconds(),
+            default_decoration: default_decoration(),
+            default_mode: default_mode(),
+        }
     }
+}
+
+fn default_idle_seconds() -> u64 {
+    5
+}
+
+fn default_decoration() -> String {
+    "underline".to_string()
+}
+
+fn default_mode() -> String {
+    "dps".to_string()
 }
 
 pub fn load() -> Result<AppConfig> {

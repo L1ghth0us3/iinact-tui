@@ -18,7 +18,7 @@ mod theme;
 mod ui;
 mod ws_client;
 
-use model::{AppEvent, AppSettings, AppState, WS_URL_DEFAULT};
+use model::{AppEvent, AppSettings, AppState, SettingsField, WS_URL_DEFAULT};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -87,31 +87,33 @@ async fn main() -> Result<()> {
                     KeyCode::Char('s') => {
                         let mut s = state.write().await;
                         s.show_settings = !s.show_settings;
+                        if s.show_settings {
+                            s.settings_cursor = SettingsField::default();
+                        }
                     }
                     KeyCode::Up => {
-                        let mut for_save = None;
-                        {
-                            let mut s = state.write().await;
-                            if s.show_settings && s.adjust_idle_seconds(1) {
-                                for_save = Some(s.settings.clone());
-                            }
-                        }
-                        if let Some(settings) = for_save {
-                            let cfg: config::AppConfig = settings.into();
-                            if let Err(err) = config::save(&cfg) {
-                                eprintln!("Failed to save config: {err:?}");
-                            }
+                        let mut s = state.write().await;
+                        if s.show_settings {
+                            s.prev_setting();
                         }
                     }
                     KeyCode::Down => {
-                        let mut for_save = None;
-                        {
-                            let mut s = state.write().await;
-                            if s.show_settings && s.adjust_idle_seconds(-1) {
-                                for_save = Some(s.settings.clone());
-                            }
+                        let mut s = state.write().await;
+                        if s.show_settings {
+                            s.next_setting();
                         }
-                        if let Some(settings) = for_save {
+                    }
+                    KeyCode::Left | KeyCode::Right => {
+                        let forward = matches!(key.code, KeyCode::Right);
+                        let updated = {
+                            let mut s = state.write().await;
+                            if s.show_settings && s.adjust_selected_setting(forward) {
+                                Some(s.settings.clone())
+                            } else {
+                                None
+                            }
+                        };
+                        if let Some(settings) = updated {
                             let cfg: config::AppConfig = settings.into();
                             if let Err(err) = config::save(&cfg) {
                                 eprintln!("Failed to save config: {err:?}");

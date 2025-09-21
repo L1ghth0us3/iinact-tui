@@ -6,7 +6,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table};
 use ratatui::Frame;
 
-use crate::model::{AppSnapshot, Decoration, ViewMode};
+use crate::model::{AppSnapshot, Decoration, SettingsField, ViewMode};
 use crate::theme::{header_style, job_color, role_bar_color, title_style, value_style, TEXT};
 
 pub fn draw(f: &mut Frame, s: &AppSnapshot) {
@@ -573,29 +573,61 @@ fn draw_settings(f: &mut Frame, s: &AppSnapshot) {
     let area = centered_rect(60, 50, f.size());
     f.render_widget(Clear, area);
 
-    let idle_line = Line::from(vec![
-        Span::styled("Idle timeout:", header_style()),
-        Span::raw(" "),
-        Span::styled(format!("{}s", s.settings.idle_seconds), value_style()),
-    ]);
-    let hint_line = Line::from(vec![Span::styled(
-        "Use ↑/↓ to adjust. Press 's' to close.",
-        header_style(),
-    )]);
+    let idle_selected = matches!(s.settings_cursor, SettingsField::IdleTimeout);
+    let decor_selected = matches!(s.settings_cursor, SettingsField::DefaultDecoration);
+    let mode_selected = matches!(s.settings_cursor, SettingsField::DefaultMode);
 
-    let lines = vec![
-        Line::from(vec![Span::styled("Settings", title_style())]),
-        Line::default(),
-        idle_line,
-        Line::default(),
-        hint_line,
-    ];
+    let mut lines = Vec::new();
+    lines.push(Line::from(vec![Span::styled("Settings", title_style())]));
+    lines.push(Line::default());
+
+    lines.push(setting_line(
+        idle_selected,
+        "Idle timeout",
+        format!("{}s", s.settings.idle_seconds),
+    ));
+    lines.push(Line::from(vec![
+        Span::raw("   "),
+        Span::styled("Set to 0 to disable idle mode.", header_style()),
+    ]));
+    lines.push(Line::default());
+
+    lines.push(setting_line(
+        decor_selected,
+        "Default decoration",
+        s.settings.default_decoration.label().to_string(),
+    ));
+    lines.push(setting_line(
+        mode_selected,
+        "Default mode",
+        s.settings.default_mode.label().to_string(),
+    ));
+    lines.push(Line::default());
+
+    lines.push(Line::from(vec![Span::styled(
+        "Use ↑/↓ to select, ←/→ to adjust. Press 's' to close.",
+        header_style(),
+    )]));
 
     let block = Block::default().title("Settings").borders(Borders::ALL);
     let widget = Paragraph::new(lines)
         .block(block)
         .alignment(Alignment::Left);
     f.render_widget(widget, area);
+}
+
+fn setting_line(selected: bool, label: &str, value: String) -> Line {
+    let marker = if selected { "▶" } else { " " };
+    let label_style = if selected {
+        title_style()
+    } else {
+        header_style()
+    };
+    Line::from(vec![
+        Span::styled(format!("{} {}:", marker, label), label_style),
+        Span::raw(" "),
+        Span::styled(value, value_style()),
+    ])
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {

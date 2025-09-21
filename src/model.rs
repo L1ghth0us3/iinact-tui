@@ -19,6 +19,7 @@ pub struct AppSnapshot {
     pub is_idle: bool,
     pub settings: AppSettings,
     pub show_settings: bool,
+    pub settings_cursor: SettingsField,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -33,6 +34,7 @@ pub struct AppState {
     pub mode: ViewMode,
     pub settings: AppSettings,
     pub show_settings: bool,
+    pub settings_cursor: SettingsField,
 }
 
 impl AppState {
@@ -84,6 +86,7 @@ impl AppState {
             is_idle: self.is_idle(now),
             settings: self.settings.clone(),
             show_settings: self.show_settings,
+            settings_cursor: self.settings_cursor,
         }
     }
 }
@@ -118,6 +121,7 @@ impl AppState {
 
     pub fn apply_settings(&mut self, settings: AppSettings) {
         self.settings = settings;
+        self.sync_current_with_defaults();
     }
 
     pub fn adjust_idle_seconds(&mut self, delta: i64) -> bool {
@@ -130,6 +134,69 @@ impl AppState {
         } else {
             false
         }
+    }
+
+    pub fn adjust_selected_setting(&mut self, forward: bool) -> bool {
+        match self.settings_cursor {
+            SettingsField::IdleTimeout => self.adjust_idle_seconds(if forward { 1 } else { -1 }),
+            SettingsField::DefaultDecoration => {
+                let changed = self.cycle_default_decoration(forward);
+                if changed {
+                    self.sync_current_with_defaults();
+                }
+                changed
+            }
+            SettingsField::DefaultMode => {
+                let changed = self.cycle_default_mode(forward);
+                if changed {
+                    self.sync_current_with_defaults();
+                }
+                changed
+            }
+        }
+    }
+
+    pub fn next_setting(&mut self) {
+        self.settings_cursor = self.settings_cursor.next();
+    }
+
+    pub fn prev_setting(&mut self) {
+        self.settings_cursor = self.settings_cursor.prev();
+    }
+
+    fn cycle_default_decoration(&mut self, forward: bool) -> bool {
+        let current = self.settings.default_decoration;
+        let next = if forward {
+            current.next()
+        } else {
+            current.prev()
+        };
+        if next != current {
+            self.settings.default_decoration = next;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn cycle_default_mode(&mut self, forward: bool) -> bool {
+        let current = self.settings.default_mode;
+        let next = if forward {
+            current.next()
+        } else {
+            current.prev()
+        };
+        if next != current {
+            self.settings.default_mode = next;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn sync_current_with_defaults(&mut self) {
+        self.decoration = self.settings.default_decoration;
+        self.mode = self.settings.default_mode;
     }
 }
 
@@ -198,14 +265,46 @@ pub fn known_jobs() -> &'static HashSet<&'static str> {
 
 // (reserved for future outbound WS messages via in-TUI controls)
 
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum SettingsField {
+    #[default]
+    IdleTimeout,
+    DefaultDecoration,
+    DefaultMode,
+}
+
+impl SettingsField {
+    pub fn next(self) -> Self {
+        match self {
+            SettingsField::IdleTimeout => SettingsField::DefaultDecoration,
+            SettingsField::DefaultDecoration => SettingsField::DefaultMode,
+            SettingsField::DefaultMode => SettingsField::IdleTimeout,
+        }
+    }
+
+    pub fn prev(self) -> Self {
+        match self {
+            SettingsField::IdleTimeout => SettingsField::DefaultMode,
+            SettingsField::DefaultDecoration => SettingsField::IdleTimeout,
+            SettingsField::DefaultMode => SettingsField::DefaultDecoration,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AppSettings {
     pub idle_seconds: u64,
+    pub default_decoration: Decoration,
+    pub default_mode: ViewMode,
 }
 
 impl Default for AppSettings {
     fn default() -> Self {
-        Self { idle_seconds: 5 }
+        Self {
+            idle_seconds: 5,
+            default_decoration: Decoration::Underline,
+            default_mode: ViewMode::Dps,
+        }
     }
 }
 
@@ -223,6 +322,8 @@ impl From<AppConfig> for AppSettings {
     fn from(value: AppConfig) -> Self {
         Self {
             idle_seconds: value.idle_seconds,
+            default_decoration: Decoration::from_config_key(&value.default_decoration),
+            default_mode: ViewMode::from_config_key(&value.default_mode),
         }
     }
 }
@@ -231,6 +332,8 @@ impl From<AppSettings> for AppConfig {
     fn from(value: AppSettings) -> Self {
         AppConfig {
             idle_seconds: value.idle_seconds,
+            default_decoration: value.default_decoration.config_key().to_string(),
+            default_mode: value.default_mode.config_key().to_string(),
         }
     }
 }
@@ -256,6 +359,14 @@ impl Decoration {
         }
     }
 
+    pub fn prev(self) -> Self {
+        match self {
+            Decoration::Underline => Decoration::None,
+            Decoration::Background => Decoration::Underline,
+            Decoration::None => Decoration::Background,
+        }
+    }
+
     pub fn row_height(self) -> u16 {
         match self {
             Decoration::Underline => 2,
@@ -268,6 +379,30 @@ impl Decoration {
             Decoration::Underline => "decor:line",
             Decoration::Background => "decor:bg",
             Decoration::None => "decor:none",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Decoration::Underline => "Underline",
+            Decoration::Background => "Background",
+            Decoration::None => "None",
+        }
+    }
+
+    pub fn config_key(self) -> &'static str {
+        match self {
+            Decoration::Underline => "underline",
+            Decoration::Background => "background",
+            Decoration::None => "none",
+        }
+    }
+
+    pub fn from_config_key<S: AsRef<str>>(key: S) -> Self {
+        match key.as_ref().to_ascii_lowercase().as_str() {
+            "background" => Decoration::Background,
+            "none" => Decoration::None,
+            _ => Decoration::Underline,
         }
     }
 }
@@ -287,10 +422,35 @@ impl ViewMode {
             ViewMode::Heal => ViewMode::Dps,
         }
     }
+
+    pub fn prev(self) -> Self {
+        self.next()
+    }
     pub fn short_label(self) -> &'static str {
         match self {
             ViewMode::Dps => "mode:DPS",
             ViewMode::Heal => "mode:HEAL",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ViewMode::Dps => "DPS",
+            ViewMode::Heal => "HEAL",
+        }
+    }
+
+    pub fn config_key(self) -> &'static str {
+        match self {
+            ViewMode::Dps => "dps",
+            ViewMode::Heal => "heal",
+        }
+    }
+
+    pub fn from_config_key<S: AsRef<str>>(key: S) -> Self {
+        match key.as_ref().to_ascii_lowercase().as_str() {
+            "heal" => ViewMode::Heal,
+            _ => ViewMode::Dps,
         }
     }
 }
