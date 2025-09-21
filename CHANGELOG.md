@@ -7,6 +7,8 @@ The format is inspired by Keep a Changelog and uses calendar dates (YYYY‑MM‑
 ## [Unreleased]
 - Add optional color presets and theme tweaks for background meters.
 - In‑TUI URL editor to switch WS endpoints.
+- Reworked history persistence to store per-date and per-encounter summaries for fast indexed loading while preserving every CombatData frame.
+- History panel now hydrates data lazily with loading indicators for dates, encounters, and detail views.
 
 ## [0.2.0] - 2025-09-21
 

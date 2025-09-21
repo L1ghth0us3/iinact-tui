@@ -20,6 +20,7 @@ A fast, dependency‑light terminal DPS meter for FFXIV that connects to an IINA
 - Idle detection with a status indicator that flips to “Connected (idle)” after a configurable timeout.
 - Settings pane (`s`) with persisted configuration stored under `~/.config/iinact-tui/iinact-tui.config` (override via `IINACT_TUI_CONFIG_DIR`).
 - Configurable defaults for decoration style and opening mode, adjustable from the settings pane.
+- Encounter history is recorded end-to-end: every CombatData frame is captured with its raw payload, and the TUI lazily loads summaries, encounters, and full detail as you drill in.
 
 ## Prerequisites
 - Rust 1.74+ (stable) recommended
@@ -50,7 +51,7 @@ The app will connect automatically to `ws://127.0.0.1:10501/ws` and begin render
 - Encounter naming: while a fight is active some servers report generic names (e.g., "Encounter"); the header falls back to Zone until a final name is available.
 - Background: widgets avoid setting a background color so your terminal theme (blur/transparency) stays visible. The header separator uses a subtle gray; background meters intentionally set a background for the meter fill only.
 - Persisted config: settings are written to `~/.config/iinact-tui/iinact-tui.config` on Linux/macOS (or `%APPDATA%\iinact-tui\iinact-tui.config` on Windows). Set `IINACT_TUI_CONFIG_DIR` to override.
-- History panel: press `h` to switch into the history view; use `↑/↓` or mouse scroll to pick a date, hit `Enter`/click to drill into the encounters list, press `Enter` again for per-encounter details, and `←`/`Backspace` to step back.
+- History panel: press `h` to switch into the history view; use `↑/↓` or mouse scroll to pick a date, hit `Enter`/click to drill into the encounters list, press `Enter` again for per-encounter details, and `←`/`Backspace` to step back. Date and encounter lists load from lightweight indexes first, with overlay indicators while data hydrates; encounter detail fetches the full frame-by-frame record on demand.
 
 ## Troubleshooting
 - No data? Confirm IINACT is running and the endpoint is reachable. The default is `ws://127.0.0.1:10501/ws`.
