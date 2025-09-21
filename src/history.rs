@@ -676,23 +676,23 @@ fn should_rollover(active: &ActiveEncounter, incoming: &EncounterSnapshot) -> bo
     let previous = &active.latest_summary;
     let next = &incoming.encounter;
 
-    if !active.saw_active && next.is_active {
-        return true;
-    }
-
-    if let (Some(prev_secs), Some(next_secs)) = (
-        parse_duration_secs(&previous.duration),
-        parse_duration_secs(&next.duration),
-    ) {
-        if next_secs + 2 < prev_secs {
-            return true;
-        }
-        if prev_secs > 10 && next_secs == 0 && next.is_active {
-            return true;
-        }
-    }
-
     if next.is_active {
+        if !active.saw_active {
+            return true;
+        }
+
+        if let (Some(prev_secs), Some(next_secs)) = (
+            parse_duration_secs(&previous.duration),
+            parse_duration_secs(&next.duration),
+        ) {
+            if next_secs + 2 < prev_secs {
+                return true;
+            }
+            if prev_secs > 10 && next_secs == 0 {
+                return true;
+            }
+        }
+
         let prev_damage = parse_number(&previous.damage);
         let next_damage = parse_number(&next.damage);
         if next_damage + 1.0 < prev_damage {
@@ -924,6 +924,13 @@ mod tests {
         let active = ActiveEncounter::from_snapshot(build_snapshot(true, "01:20", "5000"));
         let incoming = build_snapshot(true, "00:05", "100");
         assert!(should_rollover(&active, &incoming));
+    }
+
+    #[test]
+    fn rollover_ignores_inactive_duration_reset() {
+        let active = ActiveEncounter::from_snapshot(build_snapshot(true, "01:20", "5000"));
+        let incoming = build_snapshot(false, "00:00", "5000");
+        assert!(!should_rollover(&active, &incoming));
     }
 
     #[test]
