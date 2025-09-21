@@ -23,6 +23,10 @@ pub fn draw(f: &mut Frame, s: &AppSnapshot) {
     draw_header(f, chunks[0], s);
     draw_table(f, chunks[1], s);
     draw_status(f, chunks[2], s);
+
+    if s.show_settings {
+        draw_settings(f, s);
+    }
 }
 
 fn right_align(text: &str, width: usize) -> String {
@@ -554,6 +558,55 @@ fn draw_status(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         .block(Block::default().borders(Borders::NONE))
         .alignment(Alignment::Left);
     f.render_widget(widget, area);
+}
+
+fn draw_settings(f: &mut Frame, s: &AppSnapshot) {
+    let area = centered_rect(60, 50, f.size());
+    f.render_widget(Clear, area);
+
+    let idle_line = Line::from(vec![
+        Span::styled("Idle timeout:", header_style()),
+        Span::raw(" "),
+        Span::styled(format!("{}s", s.settings.idle_seconds), value_style()),
+    ]);
+    let hint_line = Line::from(vec![Span::styled(
+        "Use ↑/↓ to adjust. Press 's' to close.",
+        header_style(),
+    )]);
+
+    let lines = vec![
+        Line::from(vec![Span::styled("Settings", title_style())]),
+        Line::default(),
+        idle_line,
+        Line::default(),
+        hint_line,
+    ];
+
+    let block = Block::default().title("Settings").borders(Borders::ALL);
+    let widget = Paragraph::new(lines)
+        .block(block)
+        .alignment(Alignment::Left);
+    f.render_widget(widget, area);
+}
+
+fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
+    let horizontal = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(area);
+    let vertical = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(horizontal[1]);
+    vertical[1]
 }
 
 fn draw_bg_meters(f: &mut Frame, area: Rect, s: &AppSnapshot) {

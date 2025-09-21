@@ -3,6 +3,8 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
+use crate::config::AppConfig;
+
 pub const WS_URL_DEFAULT: &str = "ws://127.0.0.1:10501/ws";
 
 // App-side snapshot used by the UI
@@ -15,6 +17,8 @@ pub struct AppSnapshot {
     pub decoration: Decoration,
     pub mode: ViewMode,
     pub is_idle: bool,
+    pub settings: AppSettings,
+    pub show_settings: bool,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -27,6 +31,8 @@ pub struct AppState {
     pub rows: Vec<CombatantRow>,
     pub decoration: Decoration,
     pub mode: ViewMode,
+    pub settings: AppSettings,
+    pub show_settings: bool,
 }
 
 impl AppState {
@@ -76,17 +82,20 @@ impl AppState {
             decoration: self.decoration,
             mode: self.mode,
             is_idle: self.is_idle(now),
+            settings: self.settings.clone(),
+            show_settings: self.show_settings,
         }
     }
 }
-
-const IDLE_THRESHOLD: Duration = Duration::from_secs(5);
 
 impl AppState {
     fn is_idle(&self, now: Instant) -> bool {
         if !self.connected {
             return false;
         }
+        let Some(threshold) = self.settings.idle_duration() else {
+            return false;
+        };
         if self
             .encounter
             .as_ref()
@@ -96,15 +105,31 @@ impl AppState {
             return false;
         }
         if let Some(active) = self.last_active {
-            if now.saturating_duration_since(active) >= IDLE_THRESHOLD {
+            if now.saturating_duration_since(active) >= threshold {
                 return true;
             }
             return false;
         }
         if let Some(since) = self.connected_since {
-            return now.saturating_duration_since(since) >= IDLE_THRESHOLD;
+            return now.saturating_duration_since(since) >= threshold;
         }
         false
+    }
+
+    pub fn apply_settings(&mut self, settings: AppSettings) {
+        self.settings = settings;
+    }
+
+    pub fn adjust_idle_seconds(&mut self, delta: i64) -> bool {
+        let current = self.settings.idle_seconds;
+        let raw = current as i64 + delta;
+        let adjusted = if raw < 0 { 0 } else { raw as u64 };
+        if adjusted != current {
+            self.settings.idle_seconds = adjusted;
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -172,6 +197,43 @@ pub fn known_jobs() -> &'static HashSet<&'static str> {
 }
 
 // (reserved for future outbound WS messages via in-TUI controls)
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AppSettings {
+    pub idle_seconds: u64,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self { idle_seconds: 5 }
+    }
+}
+
+impl AppSettings {
+    pub fn idle_duration(&self) -> Option<Duration> {
+        if self.idle_seconds == 0 {
+            None
+        } else {
+            Some(Duration::from_secs(self.idle_seconds))
+        }
+    }
+}
+
+impl From<AppConfig> for AppSettings {
+    fn from(value: AppConfig) -> Self {
+        Self {
+            idle_seconds: value.idle_seconds,
+        }
+    }
+}
+
+impl From<AppSettings> for AppConfig {
+    fn from(value: AppSettings) -> Self {
+        AppConfig {
+            idle_seconds: value.idle_seconds,
+        }
+    }
+}
 
 // Visual decoration modes for rows; designed to be easily extensible.
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
