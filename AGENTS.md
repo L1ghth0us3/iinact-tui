@@ -95,4 +95,11 @@ python3 query_iinact.py --show-logline
   - Settings persist to `~/.config/iinact-tui/iinact-tui.config` (override with `IINACT_TUI_CONFIG_DIR`; Windows uses `%APPDATA%\iinact-tui`).
 - Styling
   - Foreground-only for normal widgets to preserve terminal blur/transparency. Background is used only for the meter fill.
-  - Role colors (xterm-256): tank=75, healer=41, dps=124; job name text uses per-job colors.
+- Role colors (xterm-256): tank=75, healer=41, dps=124; job name text uses per-job colors.
+
+## Encounter History (sled-backed)
+- Storage lives under the same config root, inside `history/encounters.sled`; override via `IINACT_TUI_CONFIG_DIR` like the main config file.
+- `HistoryStore` wraps sled trees; keys use `enc::<ms_since_epoch>::<id>` ordering so new namespaces can be added without migrations.
+- `spawn_recorder` starts a background task fed by `RecorderHandle`; push snapshots with `record_components(encounter, rows, raw_json)` and call `flush()` when tearing down connections.
+- Records capture first/last seen timestamps, the final encounter summary, combatant rows, and the last raw JSON payload. Empty passive snapshots are skipped to avoid noise.
+- The interface exposes helpers (`remove`, `tree`, `HistoryKey::prefix`) to make adding/removing sled namespaces straightforward for future features.
