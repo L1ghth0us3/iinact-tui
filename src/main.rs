@@ -12,6 +12,7 @@ use ratatui::Terminal;
 use tokio::sync::{mpsc, RwLock};
 
 mod config;
+mod history;
 mod model;
 mod parse;
 mod theme;
@@ -25,6 +26,10 @@ use model::{AppEvent, AppSettings, AppState, SettingsField, WS_URL_DEFAULT};
 async fn main() -> Result<()> {
     // Shared app state
     let state = Arc::new(RwLock::new(AppState::default()));
+
+    // History persistence (sled-backed)
+    let history_store = Arc::new(history::HistoryStore::open_default()?);
+    let history_recorder = history::spawn_recorder(history_store.clone());
 
     // Load persisted configuration into state
     let cfg = match config::load() {
@@ -44,7 +49,8 @@ async fn main() -> Result<()> {
 
     // Spawn WS client task (auto-connect and subscribe)
     let ws_url = WS_URL_DEFAULT.to_string();
-    tokio::spawn(async move { ws_client::run(ws_url, tx).await });
+    let history_tx = history_recorder.clone();
+    tokio::spawn(async move { ws_client::run(ws_url, tx, history_tx).await });
 
     // TUI init
     enable_raw_mode()?;
@@ -135,5 +141,6 @@ async fn main() -> Result<()> {
         DisableMouseCapture
     )?;
     terminal.show_cursor()?;
+    history_recorder.shutdown();
     Ok(())
 }

@@ -7,10 +7,11 @@ use tokio::time::sleep;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message;
 
+use crate::history::RecorderHandle;
 use crate::model::AppEvent;
 use crate::parse::parse_combat_data;
 
-pub async fn run(ws_url: String, tx: UnboundedSender<AppEvent>) {
+pub async fn run(ws_url: String, tx: UnboundedSender<AppEvent>, history: RecorderHandle) {
     // Simple reconnect loop
     loop {
         match connect_async(&ws_url).await {
@@ -35,6 +36,7 @@ pub async fn run(ws_url: String, tx: UnboundedSender<AppEvent>) {
                         Ok(Message::Text(txt)) => {
                             if let Ok(val) = serde_json::from_str::<Value>(&txt) {
                                 if let Some((enc, rows)) = parse_combat_data(&val) {
+                                    history.record_components(enc.clone(), rows.clone(), val);
                                     let _ = tx.send(AppEvent::CombatData {
                                         encounter: enc,
                                         rows,
@@ -50,9 +52,11 @@ pub async fn run(ws_url: String, tx: UnboundedSender<AppEvent>) {
                         Err(_e) => break,
                     }
                 }
+                history.flush();
                 let _ = tx.send(AppEvent::Disconnected);
             }
             Err(_e) => {
+                history.flush();
                 let _ = tx.send(AppEvent::Disconnected);
             }
         }

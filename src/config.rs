@@ -69,7 +69,7 @@ pub fn config_path() -> PathBuf {
     config_dir().join("iinact-tui.config")
 }
 
-fn config_dir() -> PathBuf {
+pub fn config_dir() -> PathBuf {
     if let Some(path) = env::var_os("IINACT_TUI_CONFIG_DIR") {
         PathBuf::from(path)
     } else if let Some(path) = env::var_os("XDG_CONFIG_HOME") {
@@ -81,4 +81,12 @@ fn config_dir() -> PathBuf {
     } else {
         PathBuf::from(".")
     }
+}
+
+pub fn history_dir() -> PathBuf {
+    config_dir().join("history")
+}
+
+pub fn history_db_path() -> PathBuf {
+    history_dir().join("encounters.sled")
 }
