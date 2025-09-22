@@ -1,89 +1,15 @@
 use std::cmp::Ordering;
-use std::collections::HashSet;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::AppConfig;
 use crate::errors::AppError;
-use crate::history::{EncounterRecord, HistoryDay, HistoryEncounterItem};
 
-pub const WS_URL_DEFAULT: &str = "ws://127.0.0.1:10501/ws";
+use super::{
+    AppEvent, AppSettings, CombatantRow, Decoration, EncounterSummary, HistoryPanel,
+    HistoryPanelLevel, IdleScene, SettingsField, ViewMode,
+};
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub enum HistoryPanelLevel {
-    #[default]
-    Dates,
-    Encounters,
-    EncounterDetail,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct HistoryPanel {
-    pub visible: bool,
-    pub loading: bool,
-    pub level: HistoryPanelLevel,
-    pub days: Vec<HistoryDay>,
-    pub selected_day: usize,
-    pub selected_encounter: usize,
-    pub error: Option<String>,
-    #[serde(default)]
-    pub detail_mode: ViewMode,
-}
-
-impl Default for HistoryPanel {
-    fn default() -> Self {
-        Self {
-            visible: false,
-            loading: false,
-            level: HistoryPanelLevel::Dates,
-            days: Vec::new(),
-            selected_day: 0,
-            selected_encounter: 0,
-            error: None,
-            detail_mode: ViewMode::Dps,
-        }
-    }
-}
-
-impl HistoryPanel {
-    pub fn reset(&mut self) {
-        self.loading = false;
-        self.level = HistoryPanelLevel::Dates;
-        self.selected_day = 0;
-        self.selected_encounter = 0;
-        self.error = None;
-        self.detail_mode = ViewMode::Dps;
-        for day in &mut self.days {
-            day.encounters.clear();
-            day.encounters_loaded = false;
-        }
-    }
-
-    pub fn current_day(&self) -> Option<&HistoryDay> {
-        self.days.get(self.selected_day)
-    }
-
-    pub fn current_encounter(&self) -> Option<&HistoryEncounterItem> {
-        self.current_day()
-            .and_then(|day| day.encounters.get(self.selected_encounter))
-    }
-
-    pub fn find_day_mut(&mut self, date_id: &str) -> Option<&mut HistoryDay> {
-        self.days.iter_mut().find(|day| day.iso_date == date_id)
-    }
-
-    pub fn find_encounter_mut(&mut self, key: &[u8]) -> Option<&mut HistoryEncounterItem> {
-        for day in &mut self.days {
-            if let Some(item) = day.encounters.iter_mut().find(|item| item.key == key) {
-                return Some(item);
-            }
-        }
-        None
-    }
-}
-
-// App-side snapshot used by the UI
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct AppSnapshot {
     pub connected: bool,
@@ -100,38 +26,6 @@ pub struct AppSnapshot {
     pub history: HistoryPanel,
     pub show_idle_overlay: bool,
     pub error: Option<AppError>,
-}
-
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub enum IdleScene {
-    #[default]
-    Status,
-    TopCritChain,
-    AsciiArt,
-    TipOfTheDay,
-    AchievementTicker,
-}
-
-impl IdleScene {
-    pub fn label(self) -> &'static str {
-        match self {
-            IdleScene::Status => "status",
-            IdleScene::TopCritChain => "top-crit-chain",
-            IdleScene::AsciiArt => "ascii-art",
-            IdleScene::TipOfTheDay => "tip",
-            IdleScene::AchievementTicker => "achievements",
-        }
-    }
-
-    pub fn description(self) -> &'static str {
-        match self {
-            IdleScene::Status => "Connection & encounter healthcheck",
-            IdleScene::TopCritChain => "Highlights the longest critical damage streak",
-            IdleScene::AsciiArt => "Rotating ASCII art showcase",
-            IdleScene::TipOfTheDay => "Rotation and encounter tips",
-            IdleScene::AchievementTicker => "Recently unlocked achievements",
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -220,58 +114,23 @@ impl AppState {
                     } else if self.history.selected_encounter >= day.encounters.len() {
                         self.history.selected_encounter = day.encounters.len() - 1;
                     }
-                } else {
-                    self.history.selected_encounter = 0;
-                }
-                if self.history.level == HistoryPanelLevel::Encounters
-                    && self
-                        .history
-                        .current_day()
-                        .map(|day| day.encounters.is_empty())
-                        .unwrap_or(true)
-                {
-                    self.history.level = HistoryPanelLevel::Dates;
-                }
-                if self.history.level == HistoryPanelLevel::EncounterDetail
-                    && self.history.current_encounter().is_none()
-                {
-                    self.history.level = if self
-                        .history
-                        .current_day()
-                        .map(|day| day.encounters.is_empty())
-                        .unwrap_or(true)
-                    {
-                        HistoryPanelLevel::Dates
-                    } else {
-                        HistoryPanelLevel::Encounters
-                    };
                 }
             }
             AppEvent::HistoryEncountersLoaded {
                 date_id,
                 encounters,
             } => {
-                let selected_matches = self
-                    .history
-                    .days
-                    .get(self.history.selected_day)
-                    .map(|d| d.iso_date == date_id)
-                    .unwrap_or(false);
-
-                let new_len = encounters.len();
                 if let Some(day) = self.history.find_day_mut(&date_id) {
                     day.encounters = encounters;
                     day.encounters_loaded = true;
-                    day.encounter_count = new_len;
+                    let new_len = day.encounters.len();
+                    if self.history.selected_encounter >= new_len
+                        && self.history.level == HistoryPanelLevel::Encounters
+                    {
+                        self.history.selected_encounter = new_len.saturating_sub(1);
+                    }
                 }
                 self.history.loading = false;
-
-                if selected_matches
-                    && self.history.level == HistoryPanelLevel::Encounters
-                    && self.history.selected_encounter >= new_len
-                {
-                    self.history.selected_encounter = new_len.saturating_sub(1);
-                }
             }
             AppEvent::HistoryEncounterLoaded { key, record } => {
                 if let Some(item) = self.history.find_encounter_mut(&key) {
@@ -291,13 +150,13 @@ impl AppState {
 
     pub fn clone_snapshot(&self) -> AppSnapshot {
         let now = Instant::now();
-        let elapsed_ms = self
+        let last_update_ms = self
             .last_update
-            .map(|t| now.saturating_duration_since(t).as_millis())
+            .map(|instant| now.saturating_duration_since(instant).as_millis())
             .unwrap_or(0);
         AppSnapshot {
             connected: self.connected,
-            last_update_ms: elapsed_ms,
+            last_update_ms,
             encounter: self.encounter.clone(),
             rows: self.rows.clone(),
             decoration: self.decoration,
@@ -560,278 +419,6 @@ impl AppState {
                 self.history.selected_encounter = 0;
             }
             HistoryPanelLevel::Dates => {}
-        }
-    }
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct EncounterSummary {
-    pub title: String,
-    pub zone: String,
-    pub duration: String,
-    pub encdps: String,
-    pub damage: String,
-    pub enchps: String,
-    pub healed: String,
-    pub is_active: bool,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct CombatantRow {
-    pub name: String,
-    pub job: String,
-    pub encdps: f64,
-    pub encdps_str: String,
-    pub damage: f64,
-    pub damage_str: String,
-    pub share: f64,        // 0.0..=1.0
-    pub share_str: String, // e.g., "23.4%"
-    pub enchps: f64,
-    pub enchps_str: String,
-    pub healed: f64,
-    pub healed_str: String,
-    pub heal_share: f64,
-    pub heal_share_str: String,
-    pub overheal_pct: String,
-    pub crit: String,
-    pub dh: String,
-    pub deaths: String,
-}
-
-#[derive(Debug)]
-pub enum AppEvent {
-    Connected,
-    Disconnected,
-    CombatData {
-        encounter: EncounterSummary,
-        rows: Vec<CombatantRow>,
-    },
-    HistoryDatesLoaded {
-        days: Vec<HistoryDay>,
-    },
-    HistoryEncountersLoaded {
-        date_id: String,
-        encounters: Vec<HistoryEncounterItem>,
-    },
-    HistoryEncounterLoaded {
-        key: Vec<u8>,
-        record: EncounterRecord,
-    },
-    HistoryError {
-        message: String,
-    },
-    SystemError {
-        error: AppError,
-    },
-}
-
-// Known job codes for party filtering and color mapping
-pub fn known_jobs() -> &'static HashSet<&'static str> {
-    use once_cell::sync::Lazy;
-    static JOBS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
-        [
-            // Tanks
-            "PLD", "WAR", "DRK", "GNB", // Healers
-            "WHM", "SCH", "AST", "SGE", // Melee
-            "MNK", "DRG", "NIN", "SAM", "RPR", "VPR", // Ranged phys
-            "BRD", "MCH", "DNC", // Casters
-            "BLM", "SMN", "RDM", "PCT", // Limited
-            "BLU",
-        ]
-        .into_iter()
-        .collect()
-    });
-    &JOBS
-}
-
-// (reserved for future outbound WS messages via in-TUI controls)
-
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub enum SettingsField {
-    #[default]
-    IdleTimeout,
-    DefaultDecoration,
-    DefaultMode,
-}
-
-impl SettingsField {
-    pub fn next(self) -> Self {
-        match self {
-            SettingsField::IdleTimeout => SettingsField::DefaultDecoration,
-            SettingsField::DefaultDecoration => SettingsField::DefaultMode,
-            SettingsField::DefaultMode => SettingsField::IdleTimeout,
-        }
-    }
-
-    pub fn prev(self) -> Self {
-        match self {
-            SettingsField::IdleTimeout => SettingsField::DefaultMode,
-            SettingsField::DefaultDecoration => SettingsField::IdleTimeout,
-            SettingsField::DefaultMode => SettingsField::DefaultDecoration,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct AppSettings {
-    pub idle_seconds: u64,
-    pub default_decoration: Decoration,
-    pub default_mode: ViewMode,
-}
-
-impl Default for AppSettings {
-    fn default() -> Self {
-        Self {
-            idle_seconds: 5,
-            default_decoration: Decoration::Underline,
-            default_mode: ViewMode::Dps,
-        }
-    }
-}
-
-impl AppSettings {
-    pub fn idle_duration(&self) -> Option<Duration> {
-        if self.idle_seconds == 0 {
-            None
-        } else {
-            Some(Duration::from_secs(self.idle_seconds))
-        }
-    }
-}
-
-impl From<AppConfig> for AppSettings {
-    fn from(value: AppConfig) -> Self {
-        Self {
-            idle_seconds: value.idle_seconds,
-            default_decoration: Decoration::from_config_key(&value.default_decoration),
-            default_mode: ViewMode::from_config_key(&value.default_mode),
-        }
-    }
-}
-
-impl From<AppSettings> for AppConfig {
-    fn from(value: AppSettings) -> Self {
-        AppConfig {
-            idle_seconds: value.idle_seconds,
-            default_decoration: value.default_decoration.config_key().to_string(),
-            default_mode: value.default_mode.config_key().to_string(),
-        }
-    }
-}
-
-// Visual decoration modes for rows; designed to be easily extensible.
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub enum Decoration {
-    // No additional decoration; compact one-line rows
-    None,
-    // Thin role-colored underline on the line below each row (two-line rows)
-    #[default]
-    Underline,
-    // Role-colored background meter behind each row (one-line rows)
-    Background,
-}
-
-impl Decoration {
-    pub fn next(self) -> Self {
-        match self {
-            Decoration::Underline => Decoration::Background,
-            Decoration::Background => Decoration::None,
-            Decoration::None => Decoration::Underline,
-        }
-    }
-
-    pub fn prev(self) -> Self {
-        match self {
-            Decoration::Underline => Decoration::None,
-            Decoration::Background => Decoration::Underline,
-            Decoration::None => Decoration::Background,
-        }
-    }
-
-    pub fn row_height(self) -> u16 {
-        match self {
-            Decoration::Underline => 2,
-            Decoration::Background | Decoration::None => 1,
-        }
-    }
-
-    pub fn short_label(self) -> &'static str {
-        match self {
-            Decoration::Underline => "decor:line",
-            Decoration::Background => "decor:bg",
-            Decoration::None => "decor:none",
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Decoration::Underline => "Underline",
-            Decoration::Background => "Background",
-            Decoration::None => "None",
-        }
-    }
-
-    pub fn config_key(self) -> &'static str {
-        match self {
-            Decoration::Underline => "underline",
-            Decoration::Background => "background",
-            Decoration::None => "none",
-        }
-    }
-
-    pub fn from_config_key<S: AsRef<str>>(key: S) -> Self {
-        match key.as_ref().to_ascii_lowercase().as_str() {
-            "background" => Decoration::Background,
-            "none" => Decoration::None,
-            _ => Decoration::Underline,
-        }
-    }
-}
-
-// High-level view mode of the table
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub enum ViewMode {
-    #[default]
-    Dps,
-    Heal,
-}
-
-impl ViewMode {
-    pub fn next(self) -> Self {
-        match self {
-            ViewMode::Dps => ViewMode::Heal,
-            ViewMode::Heal => ViewMode::Dps,
-        }
-    }
-
-    pub fn prev(self) -> Self {
-        self.next()
-    }
-    pub fn short_label(self) -> &'static str {
-        match self {
-            ViewMode::Dps => "mode:DPS",
-            ViewMode::Heal => "mode:HEAL",
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            ViewMode::Dps => "DPS",
-            ViewMode::Heal => "HEAL",
-        }
-    }
-
-    pub fn config_key(self) -> &'static str {
-        match self {
-            ViewMode::Dps => "dps",
-            ViewMode::Heal => "heal",
-        }
-    }
-
-    pub fn from_config_key<S: AsRef<str>>(key: S) -> Self {
-        match key.as_ref().to_ascii_lowercase().as_str() {
-            "heal" => ViewMode::Heal,
-            _ => ViewMode::Dps,
         }
     }
 }
