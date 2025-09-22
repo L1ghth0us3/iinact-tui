@@ -324,7 +324,6 @@ fn init_tracing(cli: &CliArgs) -> Result<()> {
         let file = OpenOptions::new()
             .create(true)
             .append(true)
-            .write(true)
             .open(&log_path)
             .with_context(|| format!("failed to open log file {}", log_path.display()))?;
 
