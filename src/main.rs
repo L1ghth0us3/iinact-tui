@@ -1,7 +1,10 @@
+use std::env;
+use std::fs::{create_dir_all, OpenOptions};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use std::{io, sync::Arc};
 
-use anyhow::Result;
+use anyhow::{bail, Context, Result};
 use crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseButton, MouseEvent,
     MouseEventKind,
@@ -27,6 +30,7 @@ mod ws_client;
 
 use history::HistoryStore;
 use model::{AppEvent, AppSettings, AppState, HistoryPanelLevel, SettingsField, WS_URL_DEFAULT};
+use tracing::level_filters::LevelFilter;
 
 const HISTORY_LIST_OFFSET: u16 = 4;
 
@@ -37,6 +41,9 @@ enum HistoryTask {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let cli = parse_cli()?;
+    init_tracing(&cli)?;
+
     // Shared app state
     let state = Arc::new(RwLock::new(AppState::default()));
 
@@ -248,6 +255,94 @@ async fn main() -> Result<()> {
     )?;
     terminal.show_cursor()?;
     history_recorder.shutdown().await;
+    Ok(())
+}
+
+#[derive(Debug, Default)]
+struct CliArgs {
+    debug: Option<DebugTarget>,
+}
+
+#[derive(Debug)]
+enum DebugTarget {
+    Default,
+    Path(PathBuf),
+}
+
+fn parse_cli() -> Result<CliArgs> {
+    let mut args = env::args().skip(1).peekable();
+    let mut debug = None;
+
+    while let Some(arg) = args.next() {
+        if arg == "--debug" {
+            if debug.is_some() {
+                bail!("`--debug` specified more than once");
+            }
+            if let Some(next) = args.peek() {
+                if !next.starts_with('-') {
+                    let path = args
+                        .next()
+                        .map(PathBuf::from)
+                        .expect("peek ensured next exists");
+                    debug = Some(DebugTarget::Path(path));
+                    continue;
+                }
+            }
+            debug = Some(DebugTarget::Default);
+        } else if let Some(rest) = arg.strip_prefix("--debug=") {
+            if debug.is_some() {
+                bail!("`--debug` specified more than once");
+            }
+            if rest.is_empty() {
+                debug = Some(DebugTarget::Default);
+            } else {
+                debug = Some(DebugTarget::Path(PathBuf::from(rest)));
+            }
+        } else {
+            bail!("unknown argument: {arg}");
+        }
+    }
+
+    Ok(CliArgs { debug })
+}
+
+fn init_tracing(cli: &CliArgs) -> Result<()> {
+    if let Some(target) = &cli.debug {
+        let log_path = match target {
+            DebugTarget::Default => config::config_dir().join("debug.log"),
+            DebugTarget::Path(path) => path.clone(),
+        };
+
+        if let Some(parent) = log_path.parent() {
+            if !parent.as_os_str().is_empty() {
+                create_dir_all(parent).with_context(|| {
+                    format!("failed to create log directory {}", parent.display())
+                })?;
+            }
+        }
+
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .write(true)
+            .open(&log_path)
+            .with_context(|| format!("failed to open log file {}", log_path.display()))?;
+
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(move || file.try_clone().expect("failed to clone log file handle"))
+            .with_ansi(false)
+            .with_target(false)
+            .with_max_level(LevelFilter::DEBUG);
+
+        subscriber.try_init().map_err(|err| {
+            anyhow::anyhow!(
+                "failed to initialize logging to {}: {}",
+                log_path.display(),
+                err
+            )
+        })?;
+    }
+
     Ok(())
 }
 

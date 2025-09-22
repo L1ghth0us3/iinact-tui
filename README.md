@@ -32,8 +32,17 @@ A fast, dependency‑light terminal DPS meter for FFXIV that connects to an IINA
 ```bash
 # From the repo root
 cargo run
+# Write logs to the default config directory (~/.config/iinact-tui/debug.log)
+cargo run -- --debug
+# Or choose a custom log file path
+cargo run -- --debug ./logs/iinact-debug.log
 ```
 The app will connect automatically to `ws://127.0.0.1:10501/ws` and begin rendering as soon as events arrive.
+
+### Debug logging
+- Pass `--debug` to enable file logging at startup. Without it, the TUI stays silent (no stdout/stderr noise).
+- Supplying `--debug` with no value writes all tracing output (info/debug/warn/error) to `~/.config/iinact-tui/debug.log` on Unix-like systems or the equivalent config directory on Windows.
+- Provide a path after `--debug` (e.g., `--debug ./logs/iinact.log`) to log elsewhere; parent directories are created automatically if needed.
 
 ## Controls
 - `q` or `Esc` — quit

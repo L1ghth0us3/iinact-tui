@@ -856,10 +856,7 @@ fn build_history_items_from_summaries(
         .into_iter()
         .map(|summary| {
             let total = totals.get(&summary.base_title).copied().unwrap_or(1);
-            let occurrence = occurrence_by_key
-                .get(&summary.key)
-                .copied()
-                .unwrap_or(1);
+            let occurrence = occurrence_by_key.get(&summary.key).copied().unwrap_or(1);
             let display_title = if total > 1 {
                 format!("{} ({})", summary.base_title.as_str(), occurrence)
             } else {
