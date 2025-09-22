@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is inspired by Keep a Changelog and uses calendar dates (YYYY‑MM‑DD).
 
 ## [Unreleased]
+- Refactored the UI renderer into dedicated submodules (`header`, `status`, `settings`, `table`) to simplify future tweaks and keep rendering components focused.
 - Add optional color presets and theme tweaks for background meters.
 - In‑TUI URL editor to switch WS endpoints.
 - Reworked history persistence to store per-date and per-encounter summaries for fast indexed loading while preserving every CombatData frame.
