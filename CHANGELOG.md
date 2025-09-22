@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is inspired by Keep a Changelog and uses calendar dates (YYYY‑MM‑DD).
 
 ## [Unreleased]
+- Added sorting and graph update for heal live view.
 - Refactored the UI renderer into dedicated submodules (`header`, `status`, `settings`, `table`) to simplify future tweaks and keep rendering components focused.
 - Split the history subsystem into `types`, `store`, and `recorder` modules with a thin facade so persistence data, sled access, and async recording responsibilities stay isolated.
 - Reworked history persistence to store per-date and per-encounter summaries for fast indexed loading while preserving every CombatData frame.
