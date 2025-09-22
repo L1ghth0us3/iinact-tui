@@ -19,6 +19,7 @@ use tokio::sync::{mpsc, RwLock};
 use tokio::task;
 
 mod config;
+mod errors;
 mod history;
 mod model;
 mod parse;
@@ -47,9 +48,13 @@ async fn main() -> Result<()> {
     // Shared app state
     let state = Arc::new(RwLock::new(AppState::default()));
 
+    // WS event channel
+    let (tx, mut rx) = mpsc::unbounded_channel::<AppEvent>();
+    let event_tx = tx.clone();
+
     // History persistence (sled-backed)
     let history_store = Arc::new(history::HistoryStore::open_default()?);
-    let history_recorder = history::spawn_recorder(history_store.clone());
+    let history_recorder = history::spawn_recorder(history_store.clone(), tx.clone());
 
     // Load persisted configuration into state
     let cfg = match config::load() {
@@ -63,10 +68,6 @@ async fn main() -> Result<()> {
         let mut s = state.write().await;
         s.apply_settings(AppSettings::from(cfg.clone()));
     }
-
-    // WS event channel
-    let (tx, mut rx) = mpsc::unbounded_channel::<AppEvent>();
-    let event_tx = tx.clone();
 
     // Spawn WS client task (auto-connect and subscribe)
     let ws_url = WS_URL_DEFAULT.to_string();

@@ -1,11 +1,12 @@
 use std::borrow::Cow;
 
 use ratatui::layout::Alignment;
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
+use crate::errors::AppError;
 use crate::model::AppSnapshot;
 use crate::theme::{header_style, title_style, value_style};
 
@@ -30,6 +31,23 @@ pub(super) fn draw(f: &mut Frame, area: ratatui::layout::Rect, snapshot: &AppSna
     let widget = Paragraph::new(line)
         .block(Block::default().borders(Borders::NONE))
         .alignment(Alignment::Left);
+    f.render_widget(widget, area);
+}
+
+pub(super) fn draw_error(f: &mut Frame, area: ratatui::layout::Rect, error: &AppError) {
+    let label = error.kind().label();
+    let summary = error.summary_line();
+    let text = format!("{label} error: {summary}. Run with --debug for details.");
+
+    let widget = Paragraph::new(Line::from(Span::raw(text)))
+        .block(Block::default().borders(Borders::NONE))
+        .alignment(Alignment::Left)
+        .style(
+            Style::default()
+                .fg(Color::Black)
+                .bg(crate::theme::STATUS_DISCONNECTED)
+                .add_modifier(Modifier::BOLD),
+        );
     f.render_widget(widget, area);
 }
 

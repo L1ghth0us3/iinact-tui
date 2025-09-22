@@ -32,7 +32,11 @@ pub fn draw(f: &mut Frame, snapshot: &AppSnapshot) {
         table::draw(f, chunks[1], snapshot);
     }
 
-    status::draw(f, chunks[2], snapshot);
+    if let Some(error) = snapshot.error.as_ref() {
+        status::draw_error(f, chunks[2], error);
+    } else {
+        status::draw(f, chunks[2], snapshot);
+    }
 
     if snapshot.show_settings {
         settings::draw(f, snapshot);

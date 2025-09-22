@@ -4,7 +4,8 @@ use serde_json::Value;
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::task;
 
-use crate::model::{CombatantRow, EncounterSummary};
+use crate::errors::{AppError, AppErrorKind};
+use crate::model::{AppEvent, CombatantRow, EncounterSummary};
 
 use super::store::HistoryStore;
 use super::types::{EncounterFrame, EncounterRecord, EncounterSnapshot};
@@ -66,11 +67,14 @@ enum RecorderMessage {
     Shutdown,
 }
 
-pub fn spawn_recorder(store: Arc<HistoryStore>) -> RecorderHandle {
+pub fn spawn_recorder(
+    store: Arc<HistoryStore>,
+    event_tx: mpsc::UnboundedSender<AppEvent>,
+) -> RecorderHandle {
     let (tx, mut rx) = mpsc::unbounded_channel();
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     tokio::spawn(async move {
-        let mut worker = RecorderWorker::new(store);
+        let mut worker = RecorderWorker::new(store, event_tx);
         loop {
             match rx.recv().await {
                 Some(RecorderMessage::Snapshot(snapshot)) => worker.on_snapshot(*snapshot).await,
@@ -98,13 +102,15 @@ pub fn spawn_recorder(store: Arc<HistoryStore>) -> RecorderHandle {
 struct RecorderWorker {
     store: Arc<HistoryStore>,
     current: Option<ActiveEncounter>,
+    events: mpsc::UnboundedSender<AppEvent>,
 }
 
 impl RecorderWorker {
-    fn new(store: Arc<HistoryStore>) -> Self {
+    fn new(store: Arc<HistoryStore>, events: mpsc::UnboundedSender<AppEvent>) -> Self {
         Self {
             store,
             current: None,
+            events,
         }
     }
 
@@ -151,13 +157,20 @@ impl RecorderWorker {
             match task::spawn_blocking(move || store.append(&record)).await {
                 Ok(Ok(_)) => {}
                 Ok(Err(err)) => {
-                    eprintln!("Failed to persist encounter history: {err:#}");
+                    let message = format!("Failed to persist encounter history: {err}");
+                    Self::report_error(&self.events, message, AppErrorKind::Storage);
                 }
                 Err(err) => {
-                    eprintln!("History recorder join error: {err}");
+                    let message = format!("History recorder task join error: {err}");
+                    Self::report_error(&self.events, message, AppErrorKind::History);
                 }
             }
         }
+    }
+
+    fn report_error(events: &mpsc::UnboundedSender<AppEvent>, message: String, kind: AppErrorKind) {
+        let error = AppError::new(kind, message);
+        let _ = events.send(AppEvent::SystemError { error });
     }
 }
 

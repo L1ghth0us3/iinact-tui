@@ -7,8 +7,6 @@ The format is inspired by Keep a Changelog and uses calendar dates (YYYY‑MM‑
 ## [Unreleased]
 - Refactored the UI renderer into dedicated submodules (`header`, `status`, `settings`, `table`) to simplify future tweaks and keep rendering components focused.
 - Split the history subsystem into `types`, `store`, and `recorder` modules with a thin facade so persistence data, sled access, and async recording responsibilities stay isolated.
-- Add optional color presets and theme tweaks for background meters.
-- In‑TUI URL editor to switch WS endpoints.
 - Reworked history persistence to store per-date and per-encounter summaries for fast indexed loading while preserving every CombatData frame.
 - History panel now hydrates data lazily with loading indicators for dates, encounters, and detail views.
 - Added `i` hotkey (idle-only) to toggle the idle overlay so you can peek at the most recent encounter without leaving idle mode.
@@ -27,6 +25,7 @@ Controls
 - `s`: toggle settings pane.
 - `↑/↓`: move the selection inside the settings pane.
 - `←/→`: adjust the highlighted setting.
+- `h`: open the history panel (historic data)
 - `m`: toggle DPS ↔ HEAL table mode.
 - `d`: cycle table decorations (underline → background → none).
 - `q` / `Esc`: quit.

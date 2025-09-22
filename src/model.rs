@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::config::AppConfig;
+use crate::errors::AppError;
 use crate::history::{EncounterRecord, HistoryDay, HistoryEncounterItem};
 
 pub const WS_URL_DEFAULT: &str = "ws://127.0.0.1:10501/ws";
@@ -93,6 +94,7 @@ pub struct AppSnapshot {
     pub settings_cursor: SettingsField,
     pub history: HistoryPanel,
     pub show_idle_overlay: bool,
+    pub error: Option<AppError>,
 }
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -143,6 +145,7 @@ pub struct AppState {
     pub settings_cursor: SettingsField,
     pub history: HistoryPanel,
     pub show_idle_overlay: bool,
+    pub error: Option<AppError>,
 }
 
 impl Default for AppState {
@@ -162,6 +165,7 @@ impl Default for AppState {
             settings_cursor: SettingsField::default(),
             history: HistoryPanel::default(),
             show_idle_overlay: true,
+            error: None,
         }
     }
 }
@@ -273,6 +277,9 @@ impl AppState {
                 self.history.loading = false;
                 self.history.error = Some(message);
             }
+            AppEvent::SystemError { error } => {
+                self.error = Some(error);
+            }
         }
     }
 
@@ -296,6 +303,7 @@ impl AppState {
             settings_cursor: self.settings_cursor,
             history: self.history.clone(),
             show_idle_overlay: self.show_idle_overlay,
+            error: self.error.clone(),
         }
     }
 }
@@ -573,6 +581,9 @@ pub enum AppEvent {
     },
     HistoryError {
         message: String,
+    },
+    SystemError {
+        error: AppError,
     },
 }
 
