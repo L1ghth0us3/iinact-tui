@@ -192,6 +192,7 @@ async fn main() -> Result<()> {
                             KeyCode::Char('m') => {
                                 let mut s = state.write().await;
                                 s.mode = s.mode.next();
+                                s.resort_rows();
                             }
                             KeyCode::Char('s') => {
                                 let mut s = state.write().await;

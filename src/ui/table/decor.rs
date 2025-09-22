@@ -4,8 +4,15 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
-use crate::model::AppSnapshot;
+use crate::model::{AppSnapshot, CombatantRow, ViewMode};
 use crate::theme::role_bar_color;
+
+fn metric_for_mode(snapshot: &AppSnapshot, row: &CombatantRow) -> f64 {
+    match snapshot.mode {
+        ViewMode::Dps => row.encdps,
+        ViewMode::Heal => row.enchps,
+    }
+}
 
 pub(super) fn draw_background_meters(
     f: &mut Frame,
@@ -17,12 +24,12 @@ pub(super) fn draw_background_meters(
         return;
     }
 
-    let max_dps = snapshot
+    let max_metric = snapshot
         .rows
         .iter()
-        .map(|r| r.encdps)
+        .map(|r| metric_for_mode(snapshot, r))
         .fold(0.0_f64, |a, b| a.max(b));
-    if max_dps <= 0.0 {
+    if max_metric <= 0.0 {
         return;
     }
 
@@ -30,7 +37,7 @@ pub(super) fn draw_background_meters(
     let visible_rows = (area.height.saturating_sub(header_lines)) as usize;
 
     for (index, row) in snapshot.rows.iter().take(visible_rows).enumerate() {
-        let ratio = (row.encdps / max_dps).clamp(0.0, 1.0);
+        let ratio = (metric_for_mode(snapshot, row) / max_metric).clamp(0.0, 1.0);
         let filled = (ratio * width as f64).round() as usize;
         let y = area.y + header_lines + index as u16;
         if y >= area.y + area.height {
@@ -70,12 +77,12 @@ pub(super) fn draw_underlines(
         return;
     }
 
-    let max_dps = snapshot
+    let max_metric = snapshot
         .rows
         .iter()
-        .map(|r| r.encdps)
+        .map(|r| metric_for_mode(snapshot, r))
         .fold(0.0_f64, |a, b| if b > a { b } else { a });
-    if max_dps <= 0.0 {
+    if max_metric <= 0.0 {
         return;
     }
 
@@ -84,7 +91,7 @@ pub(super) fn draw_underlines(
     let width = area.width as usize;
 
     for (index, row) in snapshot.rows.iter().take(visible_rows).enumerate() {
-        let ratio = (row.encdps / max_dps).clamp(0.0, 1.0);
+        let ratio = (metric_for_mode(snapshot, row) / max_metric).clamp(0.0, 1.0);
         let filled = (ratio * width as f64).round() as usize;
         let y = area.y + header_lines + (index as u16) * 2 + 1;
         if y >= area.y + area.height {

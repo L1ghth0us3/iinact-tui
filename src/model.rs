@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::time::{Duration, Instant};
 
@@ -190,6 +191,7 @@ impl AppState {
                 let now = Instant::now();
                 self.encounter = Some(encounter);
                 self.rows = rows;
+                self.resort_rows();
                 self.last_update = Some(now);
                 self.idle_scene = IdleScene::Status;
                 if self
@@ -306,6 +308,27 @@ impl AppState {
             error: self.error.clone(),
         }
     }
+
+    pub fn resort_rows(&mut self) {
+        match self.mode {
+            ViewMode::Dps => {
+                self.rows.sort_by(|a, b| {
+                    b.encdps
+                        .partial_cmp(&a.encdps)
+                        .unwrap_or(Ordering::Equal)
+                        .then_with(|| a.name.cmp(&b.name))
+                });
+            }
+            ViewMode::Heal => {
+                self.rows.sort_by(|a, b| {
+                    b.enchps
+                        .partial_cmp(&a.enchps)
+                        .unwrap_or(Ordering::Equal)
+                        .then_with(|| a.name.cmp(&b.name))
+                });
+            }
+        }
+    }
 }
 
 impl AppState {
@@ -414,6 +437,7 @@ impl AppState {
     fn sync_current_with_defaults(&mut self) {
         self.decoration = self.settings.default_decoration;
         self.mode = self.settings.default_mode;
+        self.resort_rows();
     }
 
     pub fn toggle_history(&mut self) -> bool {
