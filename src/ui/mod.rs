@@ -8,6 +8,7 @@ mod header;
 mod settings;
 mod status;
 mod table;
+pub(crate) use table::{draw_with_context as draw_table_with_context, TableRenderContext};
 
 pub fn draw(f: &mut Frame, snapshot: &AppSnapshot) {
     if snapshot.history.visible {

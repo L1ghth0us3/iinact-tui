@@ -167,6 +167,9 @@ async fn main() -> Result<()> {
                                     KeyCode::PageDown => s.history_move_selection(5),
                                     KeyCode::Left | KeyCode::Backspace => s.history_back(),
                                     KeyCode::Right | KeyCode::Enter => s.history_enter(),
+                                    KeyCode::Char('m') | KeyCode::Char('M') => {
+                                        s.history_toggle_mode()
+                                    }
                                     _ => {}
                                 }
                                 pending_task = determine_history_task(&mut s);

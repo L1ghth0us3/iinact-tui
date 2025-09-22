@@ -1,13 +1,14 @@
+use std::cmp::Ordering;
+
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{
-    Block, Borders, Cell, Clear, List, ListItem, ListState, Paragraph, Row, Table,
-};
+use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
-use crate::model::{AppSnapshot, HistoryPanelLevel};
-use crate::theme::{header_style, job_color, title_style, value_style, TEXT};
+use crate::model::{AppSnapshot, CombatantRow, HistoryPanelLevel, ViewMode};
+use crate::theme::{header_style, title_style, value_style, TEXT};
+use crate::ui::{draw_table_with_context, TableRenderContext};
 
 pub fn draw_history(f: &mut Frame, s: &AppSnapshot) {
     let area = f.size();
@@ -33,7 +34,7 @@ fn draw_header(f: &mut Frame, area: Rect, s: &AppSnapshot) {
             HistoryPanelLevel::Dates => "Enter/Click ▸ view encounters · ↑/↓ scroll · q/Esc quits",
             HistoryPanelLevel::Encounters => "← dates · ↑/↓ scroll · Enter view details",
             HistoryPanelLevel::EncounterDetail => {
-                "← encounters · ↑/↓ switch encounter · h/Esc closes"
+                "← encounters · ↑/↓ switch encounter · m toggles DPS/Heal · h/Esc closes"
             }
         }
     };
@@ -259,11 +260,16 @@ fn draw_encounter_detail(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         summary_height = min_required;
     }
 
+    let detail_mode = s.history.detail_mode;
+    let mut sorted_rows = record.rows.clone();
+    sort_rows_for_mode(&mut sorted_rows, detail_mode);
+
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(summary_height),
-            Constraint::Min(4),
+            Constraint::Min(6),
+            Constraint::Length(4),
             Constraint::Length(1),
         ])
         .split(area);
@@ -297,61 +303,109 @@ fn draw_encounter_detail(f: &mut Frame, area: Rect, s: &AppSnapshot) {
         .alignment(Alignment::Left);
     f.render_widget(technical, summary_chunks[1]);
 
-    if record.rows.is_empty() {
+    if sorted_rows.is_empty() {
         let block = Paragraph::new("No combatants recorded.")
             .alignment(Alignment::Center)
             .block(Block::default().borders(Borders::ALL));
         f.render_widget(block, layout[1]);
     } else {
-        let widths = [
-            Constraint::Length(18),
-            Constraint::Length(6),
-            Constraint::Length(8),
-            Constraint::Length(8),
-            Constraint::Length(10),
-            Constraint::Length(6),
-            Constraint::Length(6),
-            Constraint::Length(6),
-        ];
+        let table_title = Line::from(vec![
+            Span::styled(
+                format!("Combatants · {}", detail_mode.label()),
+                title_style(),
+            ),
+            Span::raw(" "),
+            Span::styled("(m toggles)", Style::default().fg(TEXT)),
+        ]);
+        let block = Block::default().borders(Borders::ALL).title(table_title);
+        let table_area = layout[1];
+        let inner = block.inner(table_area);
+        f.render_widget(block, table_area);
 
-        let header = Row::new(vec![
-            Cell::from("Name"),
-            Cell::from("Job"),
-            Cell::from("ENCDPS"),
-            Cell::from("Share"),
-            Cell::from("Damage"),
-            Cell::from("Crit%"),
-            Cell::from("DH%"),
-            Cell::from("Deaths"),
-        ])
-        .style(header_style());
-
-        let rows = record.rows.iter().map(|row| {
-            Row::new(vec![
-                Cell::from(row.name.clone()).style(Style::default().fg(job_color(&row.job))),
-                Cell::from(row.job.clone()),
-                Cell::from(row.encdps_str.clone()),
-                Cell::from(row.share_str.clone()),
-                Cell::from(row.damage_str.clone()),
-                Cell::from(row.crit.clone()),
-                Cell::from(row.dh.clone()),
-                Cell::from(row.deaths.clone()),
-            ])
-        });
-
-        let table = Table::new(rows, widths)
-            .header(header)
-            .block(Block::default().borders(Borders::ALL).title("Combatants"))
-            .column_spacing(1)
-            .highlight_style(Style::default());
-
-        f.render_widget(table, layout[1]);
+        let ctx = TableRenderContext {
+            rows: &sorted_rows,
+            mode: detail_mode,
+            decoration: s.decoration,
+        };
+        draw_table_with_context(f, inner, &ctx);
     }
 
-    let hint = Paragraph::new("← back · ↑/↓ switch encounter · Enter re-open")
+    let metric_label = match detail_mode {
+        ViewMode::Dps => "ENCDPS",
+        ViewMode::Heal => "ENCHPS",
+    };
+    let metric_value = match detail_mode {
+        ViewMode::Dps => &record.encounter.encdps,
+        ViewMode::Heal => &record.encounter.enchps,
+    };
+    let total_label = match detail_mode {
+        ViewMode::Dps => "Total Damage",
+        ViewMode::Heal => "Total Healed",
+    };
+    let total_value = match detail_mode {
+        ViewMode::Dps => &record.encounter.damage,
+        ViewMode::Heal => &record.encounter.healed,
+    };
+
+    let metric_value = if metric_value.is_empty() {
+        "—".to_string()
+    } else {
+        metric_value.clone()
+    };
+    let total_value = if total_value.is_empty() {
+        "—".to_string()
+    } else {
+        total_value.clone()
+    };
+
+    let mode_lines = vec![
+        Line::from(vec![
+            Span::styled("Current: ", header_style()),
+            Span::styled(detail_mode.label(), value_style()),
+            Span::styled(" · press m to toggle", Style::default().fg(TEXT)),
+        ]),
+        Line::from(vec![
+            Span::styled("Sorting: ", header_style()),
+            Span::styled(metric_label, value_style()),
+            Span::styled(" · encounter ", Style::default().fg(TEXT)),
+            Span::styled(metric_label, value_style()),
+            Span::styled(": ", Style::default().fg(TEXT)),
+            Span::styled(metric_value, value_style()),
+            Span::styled(" · ", Style::default().fg(TEXT)),
+            Span::styled(total_label, header_style()),
+            Span::styled(": ", Style::default().fg(TEXT)),
+            Span::styled(total_value, value_style()),
+        ]),
+    ];
+
+    let mode_paragraph = Paragraph::new(mode_lines).alignment(Alignment::Left).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(Line::from(vec![Span::styled("View Mode", title_style())])),
+    );
+    f.render_widget(mode_paragraph, layout[2]);
+
+    let hint = Paragraph::new("← back · ↑/↓ switch encounter · m toggles DPS/Heal · Enter re-open")
         .alignment(Alignment::Center)
         .block(Block::default().borders(Borders::NONE));
-    f.render_widget(hint, layout[2]);
+    f.render_widget(hint, layout[3]);
+}
+
+fn sort_rows_for_mode(rows: &mut [CombatantRow], mode: ViewMode) {
+    match mode {
+        ViewMode::Dps => rows.sort_by(|a, b| {
+            b.encdps
+                .partial_cmp(&a.encdps)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| a.name.cmp(&b.name))
+        }),
+        ViewMode::Heal => rows.sort_by(|a, b| {
+            b.enchps
+                .partial_cmp(&a.enchps)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| a.name.cmp(&b.name))
+        }),
+    }
 }
 
 fn render_loading_overlay(f: &mut Frame, area: Rect, message: &str) {

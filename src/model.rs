@@ -27,6 +27,8 @@ pub struct HistoryPanel {
     pub selected_day: usize,
     pub selected_encounter: usize,
     pub error: Option<String>,
+    #[serde(default)]
+    pub detail_mode: ViewMode,
 }
 
 impl Default for HistoryPanel {
@@ -39,6 +41,7 @@ impl Default for HistoryPanel {
             selected_day: 0,
             selected_encounter: 0,
             error: None,
+            detail_mode: ViewMode::Dps,
         }
     }
 }
@@ -50,6 +53,7 @@ impl HistoryPanel {
         self.selected_day = 0;
         self.selected_encounter = 0;
         self.error = None;
+        self.detail_mode = ViewMode::Dps;
         for day in &mut self.days {
             day.encounters.clear();
             day.encounters_loaded = false;
@@ -452,6 +456,7 @@ impl AppState {
             self.history.level = HistoryPanelLevel::Dates;
             self.history.selected_day = 0;
             self.history.selected_encounter = 0;
+            self.history.detail_mode = self.mode;
             true
         }
     }
@@ -503,6 +508,15 @@ impl AppState {
                     self.history.selected_encounter = next as usize;
                 }
             }
+        }
+    }
+
+    pub fn history_toggle_mode(&mut self) {
+        if !self.history.visible || self.history.loading {
+            return;
+        }
+        if self.history.level == HistoryPanelLevel::EncounterDetail {
+            self.history.detail_mode = self.history.detail_mode.next();
         }
     }
 
