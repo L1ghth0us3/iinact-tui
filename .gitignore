@@ -1,8 +1,8 @@
 /target
 **/*.rs.bk
 Cargo.lock
-/recon
+/.private
 
 Workplan.md
-plan.txt
+AGENTS.md
 
