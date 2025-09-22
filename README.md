@@ -7,6 +7,7 @@ A rust-based, dependency‑light DPS meter for FFXIV based entirely in the termi
 - Swap between DPS and Heal modes
 - Saves encounters in a sorted history list ...
 - ... and displays them in a dedicated window!
+- Swap between DPS and Heal view in history.
 - Change the visual decorations with a simple hotkey (more to come...)
 - Decorations currently implemented (cycle with `d`):
   - `Decor: underline` — thin role-colored bar directly under each entry (two-line rows).
