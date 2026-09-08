@@ -69,7 +69,7 @@ See the README.md for build and run instructions.
 - Track encounter activity timestamps so the UI can surface an idle state when no fights are active for the configured timeout.
 - Surface user-facing settings through a modal pane and persist them to disk so inputs survive restarts.
 
-### Current TUI Behavior (v0.6.0)
+### Current TUI Behavior (v0.7.0-dev)
 - Rendering
   - Table columns: Name, Share%, ENCDPS, Job, Crit%, DH%, Deaths (numeric columns are right‑aligned). On narrow widths, Share% survives longer than ENCDPS/Job.
   - Responsive breakpoints hide columns at narrow widths (down to Name‑only).
