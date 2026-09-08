@@ -134,7 +134,7 @@ Limit Break casts are parsed from ability log lines. In settings, **Limit break 
 ## Technical Notes & Behavior
 
 ### Data Processing
-- **Party-only filtering**: Rows are filtered to common job codes (PLD/WAR/DRK/GNB, WHM/SCH/AST/SGE, MNK/DRG/NIN/SAM/RPR/VPR, BRD/MCH/DNC, BLM/SMN/RDM/PCT, BLU) plus pre-jobs (GLD/PGL/MRD/LNC/ARC/CNJ/THM/ROG)
+- **Party-only filtering**: Rows are filtered to common job codes (PLD/WAR/DRK/GNB, WHM/SCH/AST/SGE, MNK/DRG/NIN/SAM/RPR/VPR, BRD/MCH/DNC, BLM/SMN/RDM/PCT, BLU/BST) plus pre-jobs (GLD/PGL/MRD/LNC/ARC/CNJ/THM/ROG)
 - **Numeric normalization**: Numeric fields arrive as strings; commas/percent signs are stripped before parsing for sorting/ratios. Damage share is computed from per-combatant damage over encounter total
 - **Encounter naming**: While a fight is active, some servers report generic names (e.g., "Encounter"); the header falls back to Zone until a final name is available
 

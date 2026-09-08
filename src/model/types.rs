@@ -123,7 +123,7 @@ pub fn known_jobs() -> &'static HashSet<&'static str> {
             "MNK", "DRG", "NIN", "SAM", "RPR", "VPR", // Ranged phys
             "BRD", "MCH", "DNC", // Casters
             "BLM", "SMN", "RDM", "PCT", // Limited
-            "BLU", // Pre-Jobs
+            "BLU", "BST", // Pre-Jobs
             "GLD", "PGL", "MRD", "LNC", "ARC", "CNJ", "THM", "ROG",
         ]
         .into_iter()

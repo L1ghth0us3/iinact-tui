@@ -58,6 +58,7 @@ impl Theme {
         job_colors.insert("PCT".to_string(), Color::Rgb(180, 220, 255));
         // Limited
         job_colors.insert("BLU".to_string(), Color::Rgb(140, 200, 255));
+        job_colors.insert("BST".to_string(), Color::Rgb(255, 180, 90));
         // Pre-Jobs
         job_colors.insert("GLD".to_string(), Color::Rgb(255, 200, 140));
         job_colors.insert("PGL".to_string(), Color::Rgb(140, 160, 255));
