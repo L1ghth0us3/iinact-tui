@@ -4,12 +4,26 @@ All notable changes to this project will be documented in this file.
 
 The format is inspired by Keep a Changelog and uses calendar dates (YYYY‑MM‑DD).
 
-## [Unreleased]
+## [0.6.0] - 2026-09-08
 
-### History Settings
-- Nested **History Settings** pane (from main Settings) to enable/disable recording, set retention limits, back up the database, browse archives read-only, and delete live history with confirmation.
-- Retention limits (`None`, older than N days, max size MB) use draft-then-apply: destructive pruning requires explicit confirmation before any data is removed.
-- Disabling history stops recording without deleting existing data; re-enabling reconnects to the same database.
+Highlights
+- **History Settings**: nested pane from main Settings to enable/disable recording, set retention limits, back up the database, browse archives read-only, and delete live history with confirmation.
+- **History deletion**: `Shift+D` on date or entry lists deletes the selected date, encounter, or dungeon run (dungeon runs can cascade to child encounters).
+- **Beastmaster (BST)**: party filtering and per-theme job colors for the new limited job.
+- **Dungeon catalog**: complete boss rosters for all catalogued zones (Anamnesis Anyder's first boss remains recorded as Unknown).
+
+Settings & config
+- Retention limits (`None`, older than N days, max size MB) use draft-then-apply: the first prune that would delete data requires explicit confirmation.
+- Disabling history stops recording without deleting existing data; re-enabling reconnects to the same sled database.
+- Manual backups copy the live DB to `history/archives/<name>/`.
+
+Controls
+- Settings: last row opens History Settings (`Enter`).
+- History panel: `Shift+D` opens a deletion confirmation dialog.
+
+Docs
+- How to Install covers IINACT plus GitHub release archives.
+- Optional `.githooks/pre-commit` runs the same rustfmt and clippy checks as CI.
 
 ## [0.5.0] - 2026-08-27
 

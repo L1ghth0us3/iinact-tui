@@ -16,17 +16,17 @@ Follow the official [IINACT installation guide](https://www.iinact.com/installat
 
 ### 2. Install Nekomata
 
-Download the archive for your OS from the [latest GitHub Release](https://github.com/L1ghth0us3/Nekomata/releases/latest) (currently **v0.5**):
+Download the archive for your OS from the [latest GitHub Release](https://github.com/L1ghth0us3/Nekomata/releases/latest) (currently **v0.6**):
 
-- Linux x86_64 (glibc): `nekomata-v0.5-linux-x86_64.tar.gz`
-- Windows x86_64: `nekomata-v0.5-windows-x86_64.zip`
+- Linux x86_64 (glibc): `nekomata-v0.6-linux-x86_64.tar.gz`
+- Windows x86_64: `nekomata-v0.6-windows-x86_64.zip`
 
 Extract the archive and **keep the `themes/` folder next to the binary**. Themes are loaded from `<executable directory>/themes/`; if that folder is missing, Nekomata falls back to the built-in Synth Wave palette.
 
 ```bash
 # Linux
-tar -xzf nekomata-v0.5-linux-x86_64.tar.gz
-cd nekomata-v0.5-linux-x86_64
+tar -xzf nekomata-v0.6-linux-x86_64.tar.gz
+cd nekomata-v0.6-linux-x86_64
 ./nekomata
 ```
 
@@ -103,7 +103,7 @@ git config core.hooksPath .githooks
 - `s` — toggle the settings pane
 - `h` — open/close the encounter history panel
 - `i` — when idle mode is active, toggle the idle overlay on/off to peek at the last encounter
-- `Shift-D` — when dungeon mode is active, cut off a dungeon run and save it
+- `Shift-D` — in the live view with dungeon mode on, cut off a dungeon run and save it; in history date/entry lists, delete the selected date, encounter, or dungeon run
 - `Tab` / `t` — in history, switch between encounter history and dungeon-run history
 - `↑/↓` — move the selection inside the settings pane or history lists
 - `←/→` — adjust the selected setting (idle timeout, decoration, mode, dungeon mode, limit break display, theme, role colors)
@@ -156,6 +156,7 @@ Limit Break casts are parsed from ability log lines. In settings, **Limit break 
 - Use `←`/`Backspace` to step back
 - Date and encounter lists load from lightweight indexes first, with overlay indicators while data hydrates
 - Encounter detail fetches the full frame-by-frame record on demand
+- `Shift+D` on a date or entry list opens a confirmation dialog to delete that date (current view), encounter, or dungeon run; dungeon-run deletion can keep or also remove child encounters
 
 ### Idle Mode
 - When the app is idle, you'll see the idle window by default (including while disconnected, after the configured timeout)
